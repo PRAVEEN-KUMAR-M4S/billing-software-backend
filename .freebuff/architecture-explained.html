@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bill Reader API — Architecture Explained</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --ink:#1b2130; --muted:#5b6478; --card:#ffffff;
+    --line:#e3e7f0; --accent:#3b5bdb; --accent-soft:#eef1ff;
+    --router:#2f6fed;  --router-bg:#e8f0fe;
+    --schema:#7048e8;  --schema-bg:#f1ecfe;
+    --service:#0ca678; --service-bg:#e6f7f2;
+    --model:#f08c00;   --model-bg:#fff3e2;
+    --deps:#e64980;    --deps-bg:#fdeaf2;
+    --danger:#d6336c;  --ok:#0ca678; --warn:#f08c00;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px -12px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65}
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+  /* ---------- layout ---------- */
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  header.hero{background:linear-gradient(135deg,#10162b 0%,#1d2b64 55%,#3b5bdb 100%);color:#fff;padding:56px 0 48px;position:relative;overflow:hidden}
+  header.hero::after{content:"";position:absolute;inset:0;background:
+    radial-gradient(600px 240px at 85% 10%,rgba(255,255,255,.14),transparent 70%);pointer-events:none}
+  .eyebrow{display:inline-block;font-size:13px;letter-spacing:.14em;text-transform:uppercase;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:4px 12px;border-radius:999px;margin-bottom:14px}
+  h1{font-size:clamp(28px,5vw,44px);line-height:1.15;margin:0 0 10px}
+  .sub{font-size:17px;color:#cfd8ff;max-width:70ch;margin:0}
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav.toc ul{display:flex;gap:4px;list-style:none;margin:0;padding:8px 0;overflow-x:auto}
+  nav.toc a{display:block;white-space:nowrap;font-size:14px;color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:999px}
+  nav.toc a:hover,.nav a:focus{background:var(--accent-soft);color:var(--accent)}
+  section{padding:44px 0 8px}
+  h2{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
+  h3{font-size:18px;margin:26px 0 8px}
+  .lede{color:var(--muted);margin:0 0 22px;max-width:80ch}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
+  .grid{display:grid;gap:16px}
+  @media(min-width:760px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}}
+  code,.mono{font-family:var(--mono);font-size:.9em}
+  code{background:#eef1f7;border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  pre{background:#10162b;color:#dbe2ff;border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:13.5px;line-height:1.6}
+  pre code{background:none;border:none;padding:0;color:inherit}
+  .pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;letter-spacing:.02em}
+  .p-router{background:var(--router-bg);color:var(--router)}
+  .p-schema{background:var(--schema-bg);color:var(--schema)}
+  .p-service{background:var(--service-bg);color:var(--service)}
+  .p-model{background:var(--model-bg);color:var(--model)}
+  .p-deps{background:var(--deps-bg);color:var(--deps)}
+  /* ---------- pipeline ---------- */
+  .pipeline{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
+  .pipe-node{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:10px 14px;text-align:center;min-width:120px;box-shadow:var(--shadow)}
+  .pipe-node b{display:block;font-size:14px}
+  .pipe-node span{font-size:12px;color:var(--muted)}
+  .pipe-node.now{border-color:var(--ok);background:var(--service-bg)}
+  .pipe-node.future{border-style:dashed;opacity:.75}
+  .arrow{color:var(--muted);font-size:18px;animation:nudge 1.6s ease-in-out infinite}
+  @keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+  /* ---------- tree ---------- */
+  .tree{font-family:var(--mono);font-size:13.5px;line-height:1.9;white-space:pre;overflow-x:auto;margin:0}
+  .tree .cmt{color:#8a93a8}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+  /* ---------- flow tabs ---------- */
+  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{font:inherit;font-size:14px;font-weight:600;border:1.5px solid var(--line);background:#fff;color:var(--muted);border-radius:999px;padding:7px 16px;cursor:pointer}
+  .tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:#fff}
+  .steps{list-style:none;margin:0;padding:0;counter-reset:step}
+  .steps li{counter-increment:step;position:relative;padding:0 0 18px 52px;border-left:2px solid var(--line);margin-left:16px}
+  .steps li:last-child{border-left-color:transparent;padding-bottom:0}
+  .steps li::before{content:counter(step);position:absolute;left:-17px;top:0;width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:14px;display:grid;place-items:center;border:3px solid var(--bg)}
+  .steps li .where{font-size:12.5px;margin-bottom:2px}
+  .steps li p{margin:2px 0 0;font-size:14.5px}
+  .steps li.final::before{background:var(--ok)}
+  .steps li.fail::before{background:var(--danger)}
+  /* ---------- tables ---------- */
+  table{width:100%;border-collapse:collapse;font-size:14.5px;background:var(--card)}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#f2f4f9}
+  tr:last-child td{border-bottom:none}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  /* ---------- callouts ---------- */
+  .callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 12px 12px 0;padding:14px 18px;margin:18px 0;font-size:15px}
+  .callout.warn{border-color:var(--warn);background:var(--model-bg)}
+  .callout.bad{border-color:var(--danger);background:var(--deps-bg)}
+  .callout b{display:block;margin-bottom:2px}
+  /* ---------- token bar ---------- */
+  .token-bar{display:flex;border-radius:10px;overflow:hidden;border:1px solid var(--line);font-family:var(--mono);font-size:13px;box-shadow:var(--shadow)}
+  .token-bar div{padding:12px 14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .t-head{background:#e8f0fe;color:#1d4ed8;flex:0 0 auto}
+  .t-payload{background:#f1ecfe;color:#5b21b6;flex:1 1 auto}
+  .t-sig{background:#e6f7f2;color:#047857;flex:0 0 auto}
+  .tok-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin-top:8px}
+  /* ---------- roadmap ---------- */
+  .road{list-style:none;margin:0;padding:0}
+  .road li{display:flex;gap:14px;padding:12px 0;border-bottom:1px dashed var(--line)}
+  .road li:last-child{border-bottom:none}
+  .road .dot{flex:0 0 auto;width:14px;height:14px;border-radius:50%;background:#cfd5e4;margin-top:7px;position:relative}
+  .road li.done .dot{background:var(--ok)}
+  .road li.now .dot{background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  .road li.now .dot::after{content:"";position:absolute;inset:3px;border-radius:50%;background:#fff}
+  .road .body b{display:block;font-size:15px}
+  .road .body span{font-size:13.5px;color:var(--muted)}
+  .tag-done{color:var(--ok);font-weight:700;font-size:12.5px}
+  .tag-now{color:var(--accent);font-weight:700;font-size:12.5px}
+  /* ---------- glossary ---------- */
+  .gl{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .gl b{display:block;color:var(--accent);font-size:15px}
+  .gl p{margin:4px 0 0;font-size:14px;color:var(--muted)}
+  .gl code{font-size:12.5px}
+  footer{margin-top:56px;padding:26px 0 40px;border-top:1px solid var(--line);color:var(--muted);font-size:13.5px;text-align:center}
+  .kbd{font-family:var(--mono);font-size:12.5px;background:#10162b;color:#dbe2ff;border-radius:6px;padding:2px 8px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Learning project · Backend with FastAPI</span>
+    <h1>Bill photo → clean table: how this backend is built</h1>
+    <p class="sub">A visual tour of the project's architecture — the folder structure, the four
+    layers, and exactly what happens when a request arrives. Phase&nbsp;1 (authentication) is built
+    and verified; the bill-reading feature slots into the same shape.</p>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Page sections">
+  <div class="wrap">
+    <ul>
+      <li><a href="#big">Big picture</a></li>
+      <li><a href="#folders">Folder structure</a></li>
+      <li><a href="#layers">The 4 layers</a></li>
+      <li><a href="#life">A request's life</a></li>
+      <li><a href="#security">Hashing &amp; JWT</a></li>
+      <li><a href="#api">API &amp; checks</a></li>
+      <li><a href="#state">Who owns what</a></li>
+      <li><a href="#next">What's next</a></li>
+      <li><a href="#words">Word list</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ==================== BIG PICTURE ==================== -->
+<section id="big">
+  <h2>1. The big picture</h2>
+  <p class="lede">The final project takes a <b>photo of a bill</b> and produces a <b>structured row</b>
+  your app can trust. Before the AI parts, we build the foundation they stand on: accounts and
+  login.</p>
+
+  <div class="pipeline" role="img" aria-label="Pipeline: photo, Claude reads image, fixed form, your code checks, saved or please fix">
+    <div class="pipe-node future"><b>📷 Photo</b><span>JPG / PNG upload</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>Claude reads</b><span>vision + tool use</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>Fixed form</b><span>shop, date, total, items</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>Your code checks</b><span>validation + maths</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>Saved / fix it</b><span>201 or 422</span></div>
+  </div>
+
+  <div class="callout"><b>Where we are: Phase 1 ✅</b>
+  Authentication is built and tested — <code>register</code>, <code>login</code>, <code>me</code>.
+  Every future route (upload a photo, list expenses) will hang off this same login.</div>
+
+  <div class="pipeline" role="img" aria-label="Phase status: auth done, bill shape next, then plain description, structured output, validation, list and ship">
+    <div class="pipe-node now"><b>1 · Auth</b><span>done ✅</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>2 · Bill shape</b><span>table + schema</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>3 · Describe</b><span>photo → words</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>4 · Force shape</b><span>tool use</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>5 · Validate</b><span>check, don't trust</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="pipe-node future"><b>6 · List &amp; ship</b><span>demo, 10 bills</span></div>
+  </div>
+</section>
+
+<!-- ==================== FOLDERS ==================== -->
+<section id="folders">
+  <h2>2. Folder structure</h2>
+  <p class="lede">Each folder answers <b>one question</b>. When you add a feature, you add one file
+  to each folder — you rarely touch files from other features.</p>
+
+  <div class="card">
+    <pre class="tree" aria-label="Annotated folder tree">fastapi2/
+├── <b>main.py</b>               <span class="cmt"># entry point: how do I start the server?</span>
+├── <b>.env</b>                  <span class="cmt"># secrets (git-ignored). Copy from .env.example</span>
+├── <b>docs/</b>                 <span class="cmt"># beginner docs: ARCHITECTURE.md, AUTH.md</span>
+└── <b>app/</b>
+    ├── <b>app.py</b>             <span class="cmt"># the app: startup hook + list of routers</span>
+    ├── <b>config.py</b>          <span class="cmt"># settings from .env (SECRET_KEY, token life)</span>
+    ├── <b>deps.py</b>            <span class="cmt"># shared protection: token → user</span>
+    ├── <span style="color:var(--router)">routers/</span>            <span class="cmt"># "the web desk"  — which URL, which status</span>
+    │   └── <span style="color:var(--router)">auth.py</span>         <span class="cmt"># POST /auth/register, /auth/login, GET /auth/me</span>
+    ├── <span style="color:var(--schema)">schemas/</span>            <span class="cmt"># "the form"       — exact fields and types</span>
+    │   └── <span style="color:var(--schema)">auth.py</span>         <span class="cmt"># UserCreate, UserLogin, TokenResponse, UserOut</span>
+    ├── <span style="color:var(--service)">services/</span>           <span class="cmt"># "the workshop"   — HOW things are done</span>
+    │   ├── <span style="color:var(--service)">db.py</span>            <span class="cmt"># async database engine + session per request</span>
+    │   └── <span style="color:var(--service)">auth.py</span>         <span class="cmt"># bcrypt hash/verify, JWT create/decode</span>
+    └── <span style="color:var(--model)">models/</span>             <span class="cmt"># "the warehouse"  — tables and columns</span>
+        └── <span style="color:var(--model)">user.py</span>          <span class="cmt"># users: id, email, hashed_password, created_at</span></pre>
+
+    <div class="legend" aria-label="Color legend">
+      <span class="pill p-router">routers/ = URL &amp; HTTP</span>
+      <span class="pill p-schema">schemas/ = data shape</span>
+      <span class="pill p-service">services/ = logic</span>
+      <span class="pill p-model">models/ = storage</span>
+      <span class="pill p-deps">deps.py = who is calling</span>
+    </div>
+  </div>
+
+  <div class="callout"><b>Naming pattern for the future</b>
+  Feature <code>expenses</code> will add <code>models/expense.py</code>,
+  <code>schemas/bill.py</code>, <code>routers/expenses.py</code> — auth files stay untouched.</div>
+</section>
+
+<!-- ==================== LAYERS ==================== -->
+<section id="layers">
+  <h2>3. The four layers (and the one rule)</h2>
+  <p class="lede">Arrows point <b>down only</b>. A model never imports a router; a service never
+  knows HTTP exists. That rule is what keeps code testable and swappable.</p>
+
+  <div class="card">
+    <svg viewBox="0 0 900 478" width="100%" role="img" aria-labelledby="layersTitle layersDesc" style="max-width:900px;height:auto;display:block;margin:0 auto">
+      <title id="layersTitle">Layer diagram</title>
+      <desc id="layersDesc">Request flows down through routers, then splits to schemas and deps, then services, then models; errors flow back up as HTTP status codes.</desc>
+      <defs>
+        <marker id="arrDown" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5b6478"/>
+        </marker>
+        <marker id="arrUp" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#d6336c"/>
+        </marker>
+      </defs>
+
+      <!-- HTTP in -->
+      <rect x="330" y="8" width="240" height="42" rx="10" fill="#10162b"/>
+      <text x="450" y="34" text-anchor="middle" fill="#fff" font-size="15" font-family="system-ui">HTTP request (JSON in)</text>
+
+      <!-- routers -->
+      <rect x="170" y="76" width="560" height="74" rx="12" fill="#e8f0fe" stroke="#2f6fed" stroke-width="2"/>
+      <text x="190" y="106" font-size="17" font-weight="700" fill="#1d4ed8" font-family="system-ui">routers/ — the web desk</text>
+      <text x="190" y="130" font-size="13.5" fill="#3b4a6b" font-family="system-ui">URL + status codes only. Calls services, contains no logic.</text>
+      <text x="712" y="96" text-anchor="end" font-size="12" fill="#2f6fed" font-family="system-ui">auth.py</text>
+
+      <!-- arrow router -> mid -->
+      <line x1="450" y1="150" x2="450" y2="184" stroke="#5b6478" stroke-width="2.5" marker-end="url(#arrDown)"/>
+
+      <!-- schemas + deps -->
+      <rect x="60" y="192" width="380" height="84" rx="12" fill="#f1ecfe" stroke="#7048e8" stroke-width="2"/>
+      <text x="80" y="222" font-size="17" font-weight="700" fill="#5b21b6" font-family="system-ui">schemas/ — the form</text>
+      <text x="80" y="246" font-size="13.5" fill="#4b3f72" font-family="system-ui">Pydantic validates fields/types;</text>
+      <text x="80" y="265" font-size="13.5" fill="#4b3f72" font-family="system-ui">422 before any logic runs.</text>
+
+      <rect x="470" y="192" width="370" height="84" rx="12" fill="#fdeaf2" stroke="#e64980" stroke-width="2"/>
+      <text x="490" y="222" font-size="17" font-weight="700" fill="#c2255c" font-family="system-ui">deps.py — the bouncer</text>
+      <text x="490" y="246" font-size="13.5" fill="#7a3b53" font-family="system-ui">get_current_user: Bearer token</text>
+      <text x="490" y="265" font-size="13.5" fill="#7a3b53" font-family="system-ui">→ verified user (or 401).</text>
+
+      <line x1="250" y1="276" x2="400" y2="310" stroke="#5b6478" stroke-width="2.5" marker-end="url(#arrDown)"/>
+      <line x1="655" y1="276" x2="500" y2="310" stroke="#5b6478" stroke-width="2.5" marker-end="url(#arrDown)"/>
+
+      <!-- services -->
+      <rect x="170" y="314" width="560" height="74" rx="12" fill="#e6f7f2" stroke="#0ca678" stroke-width="2"/>
+      <text x="190" y="344" font-size="17" font-weight="700" fill="#087f5b" font-family="system-ui">services/ — the workshop</text>
+      <text x="190" y="368" font-size="13.5" fill="#2b6b57" font-family="system-ui">How it's done: SQL sessions, bcrypt, JWT. No HTTP types in here.</text>
+
+      <line x1="450" y1="388" x2="450" y2="422" stroke="#5b6478" stroke-width="2.5" marker-end="url(#arrDown)"/>
+
+      <!-- models -->
+      <rect x="170" y="430" width="560" height="40" rx="12" fill="#fff3e2" stroke="#f08c00" stroke-width="2" transform="translate(0,-8)"/>
+      <text x="190" y="455" font-size="16" font-weight="700" fill="#b45309" font-family="system-ui">models/ — the warehouse (users table)</text>
+
+      <!-- response up -->
+      <path d="M 730 113 L 845 113 L 845 30 L 580 30" fill="none" stroke="#d6336c" stroke-width="2.5" marker-end="url(#arrUp)" stroke-dasharray="7 5"/>
+      <text x="852" y="78" font-size="13" fill="#d6336c" font-family="system-ui" transform="rotate(90 852 78)">JSON out + status code</text>
+    </svg>
+  </div>
+
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><span class="pill p-router">Notice</span><p style="margin:8px 0 0;font-size:14.5px"><b>Schemas run first.</b> Garbage JSON never reaches your logic — Pydantic rejects it with <code>422</code>.</p></div>
+    <div class="card"><span class="pill p-deps">Notice</span><p style="margin:8px 0 0;font-size:14.5px"><b>Deps run before route bodies.</b> No token? Your endpoint code never even executes.</p></div>
+    <div class="card"><span class="pill p-service">Notice</span><p style="margin:8px 0 0;font-size:14.5px"><b>Services are plain functions.</b> You can test <code>verify_password()</code> without a server or a browser.</p></div>
+  </div>
+</section>
+
+<!-- ==================== REQUEST LIFE ==================== -->
+<section id="life">
+  <h2>4. A request's life, step by step</h2>
+  <p class="lede">Pick an endpoint and follow one request from the wire to the database and back.
+  These are the exact three routes that exist today.</p>
+
+  <div class="tabs" role="tablist" aria-label="Endpoint flows">
+    <button class="tab" role="tab" id="tab-reg" aria-controls="panel-reg" aria-selected="true">POST /auth/register</button>
+    <button class="tab" role="tab" id="tab-log" aria-controls="panel-log" aria-selected="false">POST /auth/login</button>
+    <button class="tab" role="tab" id="tab-me" aria-controls="panel-me" aria-selected="false">GET /auth/me</button>
+  </div>
+
+  <div class="card">
+    <div id="panel-reg" role="tabpanel" aria-labelledby="tab-reg">
+      <ol class="steps">
+        <li><div class="where"><span class="pill p-router">routers/auth.py</span></div><p>FastAPI matches <code>POST /auth/register</code> and hands the JSON body over.</p></li>
+        <li><div class="where"><span class="pill p-schema">schemas/auth.py</span></div><p>Pydantic checks <code>UserCreate</code>: email present, password 6–72 chars. Wrong? → <b>422</b>, stop here.</p></li>
+        <li><div class="where"><span class="pill p-service">services/db.py</span></div><p>A fresh database session opens; query: <code>SELECT * FROM users WHERE email = ?</code>.</p></li>
+        <li class="fail"><div class="where"><span class="pill p-router">branch</span></div><p>Email already exists → <b>409 Conflict</b>. (Never reveal whether a password was right — same idea later on login.)</p></li>
+        <li><div class="where"><span class="pill p-service">services/auth.py</span></div><p><code>hash_password()</code> runs bcrypt with a random salt → a hash string. The plain password is discarded.</p></li>
+        <li><div class="where"><span class="pill p-model">models/user.py</span></div><p>New <code>users</code> row is inserted and committed.</p></li>
+        <li class="final"><div class="where">response</div><p><b>201</b> <code>{"id": 1, "email": "ana@example.com"}</code> — shaped by <code>UserOut</code>, so the hash can't leak.</p></li>
+      </ol>
+    </div>
+
+    <div id="panel-log" role="tabpanel" aria-labelledby="tab-log" hidden>
+      <ol class="steps">
+        <li><div class="where"><span class="pill p-router">routers/auth.py</span></div><p>FastAPI matches <code>POST /auth/login</code>.</p></li>
+        <li><div class="where"><span class="pill p-schema">schemas/auth.py</span></div><p>Pydantic validates <code>UserLogin</code> → bad shape is <b>422</b>.</p></li>
+        <li><div class="where"><span class="pill p-service">services/db.py</span></div><p>Look up the user by email (lower-cased, so <code>Ana@</code> = <code>ana@</code>).</p></li>
+        <li class="fail"><div class="where"><span class="pill p-service">services/auth.py</span></div><p><code>verify_password()</code> → wrong password <b>or</b> unknown email → same <b>401</b> message. Attackers can't probe which emails exist.</p></li>
+        <li><div class="where"><span class="pill p-service">services/auth.py</span></div><p><code>create_access_token(user_id)</code> signs a JWT: <code>{"sub": "1", "exp": …}</code> + <code>SECRET_KEY</code>.</p></li>
+        <li class="final"><div class="where">response</div><p><b>200</b> <code>{"access_token": "eyJ…", "token_type": "bearer"}</code>. The server stores nothing — the token <em>is</em> the session.</p></li>
+      </ol>
+    </div>
+
+    <div id="panel-me" role="tabpanel" aria-labelledby="tab-me" hidden>
+      <ol class="steps">
+        <li><div class="where">header</div><p>Client sends <code>Authorization: Bearer eyJ…</code>.</p></li>
+        <li><div class="where"><span class="pill p-deps">deps.py</span></div><p><code>get_current_user</code> runs <b>before</b> the route body. No header → <b>401</b>, full stop.</p></li>
+        <li><div class="where"><span class="pill p-service">services/auth.py</span></div><p><code>decode_access_token()</code> verifies the signature and expiry. Forged or expired → <b>401</b>.</p></li>
+        <li><div class="where"><span class="pill p-model">models/user.py</span></div><p>Token says <code>sub=1</code> → load that row. Deleted account → <b>401</b>.</p></li>
+        <li class="final"><div class="where"><span class="pill p-router">routers/auth.py</span></div><p>Route body is one line: <code>return user</code> → <b>200</b> <code>{"id": 1, "email": "…"}</code>.</p></li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="callout"><b>Reuse this pattern</b>
+  <code>Depends(get_current_user)</code> is the only line you add to protect a future route —
+  e.g. <code>POST /bills</code> (photo upload) and <code>GET /expenses</code>.</div>
+</section>
+
+<!-- ==================== SECURITY ==================== -->
+<section id="security">
+  <h2>5. Hashing &amp; JWT — the two security ideas</h2>
+  <p class="lede">Everything else in auth is plumbing built around these two mechanisms.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">🔒 bcrypt: passwords are never stored</h3>
+      <pre><code>in:   secret123
+      ↓  bcrypt.hashpw(salt, rounds=12)
+out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
+      <ul style="font-size:14.5px;color:var(--muted);padding-left:20px;margin:10px 0 0">
+        <li><b>Salt</b> — same password → different hash each time.</li>
+        <li><b>Slow on purpose</b> — ~200 ms per check; brute force becomes expensive.</li>
+        <li><b>72-byte cap</b> — why the schema says <code>max_length=72</code>.</li>
+        <li>Login compares with <code>checkpw()</code> — never “hash the input, string-equal”.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">🪪 JWT: the token carries identity</h3>
+      <div class="token-bar" aria-label="JWT three parts: header, payload, signature">
+        <div class="t-head">header<br>alg + type</div>
+        <div class="t-payload">payload — {"sub": "1", "exp": 1770…}<br><small>user id + expiry</small></div>
+        <div class="t-sig">signature<br>HMAC-SHA256</div>
+      </div>
+      <div class="tok-legend">
+        <span>✍️ signed with <code>SECRET_KEY</code> (in <code>.env</code>)</span>
+        <span>🕵️ tamper with any byte → signature fails → <b>401</b></span>
+        <span>⏱️ past <code>exp</code> → <b>401</b></span>
+      </div>
+      <ul style="font-size:14.5px;color:var(--muted);padding-left:20px;margin:12px 0 0">
+        <li>Stateless: restart the server, nobody is logged out.</li>
+        <li>Anyone holding <code>SECRET_KEY</code> can mint tokens — guard it like a password.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout bad"><b>The three checks you must be able to explain out loud</b>
+  1) wrong password at login → 401 with a <em>generic</em> message ·
+  2) forged/expired token → decode fails → 401, route body never runs ·
+  3) password never round-trips — hashed on write, and <code>response_model=UserOut</code>
+  blocks the hash from ever leaving.</div>
+
+  <div class="callout warn"><b>Plan-level traps that apply later (same spirit)</b>
+  “Reply in JSON” in a prompt is the <em>text</em> version of storing a password in plain text —
+  works until it doesn't. Use tool use / structured outputs; validate with Pydantic before saving;
+  store money as integers in paise; ask Claude for ISO dates.</div>
+</section>
+
+<!-- ==================== API TABLE ==================== -->
+<section id="api">
+  <h2>6. The API as it exists today</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Method</th><th>URL</th><th>Body</th><th>Success</th><th>Failures</th></tr></thead>
+      <tbody>
+        <tr><td><span class="pill p-router">POST</span></td><td><code>/auth/register</code></td><td><code>{email, password}</code></td><td>201 <code>{id, email}</code></td><td>409 duplicate · 422 bad input</td></tr>
+        <tr><td><span class="pill p-router">POST</span></td><td><code>/auth/login</code></td><td><code>{email, password}</code></td><td>200 <code>{access_token}</code></td><td>401 wrong creds · 422 bad input</td></tr>
+        <tr><td><span class="pill p-router">GET</span></td><td><code>/auth/me</code></td><td>— (Bearer token)</td><td>200 <code>{id, email}</code></td><td>401 missing/invalid/deleted</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:14px;font-size:14.5px;color:var(--muted)">Interactive playground: <a href="http://127.0.0.1:8000/docs" target="_blank" rel="noopener">127.0.0.1:8000/docs</a> —
+  every row above is clickable and runnable. All six behaviours (register, duplicate, wrong password, login, me ✅, me ❌) were verified against a live server.</p>
+</section>
+
+<!-- ==================== STATE ==================== -->
+<section id="state">
+  <h2>7. Who owns what (state map)</h2>
+  <p class="lede">Bugs in backends are usually “two places think they own the same data”. One owner per piece of state:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>State</th><th>Single owner</th><th>Why there</th></tr></thead>
+      <tbody>
+        <tr><td><code>SECRET_KEY</code>, token lifetime</td><td><code>config.py</code> ← <code>.env</code></td><td>one read point; <code>.env</code> is git-ignored so keys can't leak in commits</td></tr>
+        <tr><td>DB engine &amp; sessions</td><td><code>services/db.py</code></td><td>one engine; each request gets a short-lived session that always closes</td></tr>
+        <tr><td>“Who is logged in?”</td><td>the JWT itself</td><td>stateless servers — no sessions table, no cache invalidation</td></tr>
+        <tr><td>Request payload shape</td><td>the schema</td><td>validated once, trusted afterwards</td></tr>
+        <tr><td>Table columns</td><td>the model</td><td>one definition, used by every query</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ==================== NEXT ==================== -->
+<section id="next">
+  <h2>8. What's next (and where it goes)</h2>
+  <div class="card">
+    <ul class="road">
+      <li class="done"><span class="dot"></span><div class="body"><b>Phase 1 · Authentication <span class="tag-done">— DONE</span></b>
+        <span>register / login / me, bcrypt, JWT, get_current_user. Verified end-to-end.</span></div></li>
+      <li class="now"><span class="dot"></span><div class="body"><b>Phase 2 · Design the shape on paper <span class="tag-now">— NEXT</span></b>
+        <span>Write down every field: shop, date, total, currency, items(name, qty, price). Required or not? → then <code>models/expense.py</code> + a matching table.</span></div></li>
+      <li><span class="dot"></span><div class="body"><b>Phase 3 · Get the photo to Claude</b>
+        <span>Upload route (JPG/PNG, shrink first) → plain-text description of bill #1. Checkpoint: it describes your real bill correctly.</span></div></li>
+      <li><span class="dot"></span><div class="body"><b>Phase 4 · Force the shape</b>
+        <span>One tool (<code>save_bill</code>) whose input schema is your form; require Claude to use it. Read the tool input as your data.</span></div></li>
+      <li><span class="dot"></span><div class="body"><b>Phase 5 · Check before you save</b>
+        <span>Pydantic validation + items-sum-to-total maths check. Fail → 422 with highlighted fields; save only on user confirm.</span></div></li>
+      <li><span class="dot"></span><div class="body"><b>Phase 6 · List, demo, ship</b>
+        <span>“My Expenses” + monthly total, 5 sample bills, push, then run 10 real bills (printed / handwritten / crumpled / Malayalam) and write down the score.</span></div></li>
+    </ul>
+  </div>
+
+  <h3>The honest-miss principle</h3>
+  <div class="callout"><b>9/10 with a photo of the miss beats 10/10 claimed.</b>
+  The plan's “DONE” means a number you measured and a photo of the bill it got wrong, with a note
+  on why. Build validation so a bad extraction is <em>flagged</em>, never silently saved — that's
+  how you keep the number honest.</div>
+</section>
+
+<!-- ==================== GLOSSARY ==================== -->
+<section id="words">
+  <h2>9. Word list (the plan's vocabulary → this codebase)</h2>
+  <div class="grid g3">
+    <div class="gl"><b>Structured output</b><p>An AI reply in exact fields, not a paragraph. <em>Here:</em> what a Pydantic response model already guarantees — for Claude's reply too, later.</p></div>
+    <div class="gl"><b>JSON schema</b><p>The rules for that shape: fields, types, required-ness. <em>Here:</em> every file in <code>schemas/</code>.</p></div>
+    <div class="gl"><b>Tool use</b><p>Making Claude reply by filling a tool's input. <em>Later:</em> one tool, <code>save_bill</code>, input = your bill shape.</p></div>
+    <div class="gl"><b>Vision</b><p>Claude reads images you send, including paper photos. <em>Later:</em> the upload route in <code>routers/expenses.py</code>.</p></div>
+    <div class="gl"><b>Validation</b><p>Your own code re-checking before trusting. <em>Here:</em> Pydantic at the edge + maths check in Phase 5.</p></div>
+    <div class="gl"><b>ISO date</b><p><code>2026-03-12</code> so 12/03 can't be March or December. <em>Later:</em> <code>date</code> column on the expense table.</p></div>
+    <div class="gl"><b>Async</b><p>Waiting without blocking the thread. <em>Here:</em> every route, the DB, and later the Claude call.</p></div>
+    <div class="gl"><b>Dependency</b><p>FastAPI runs it before a route (e.g. <code>get_current_user</code>). <em>Here:</em> <code>deps.py</code>.</p></div>
+    <div class="gl"><b>Lifespan</b><p>Code that runs at server start/stop. <em>Here:</em> creates tables in <code>app/app.py</code>.</p></div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Freebuff Desktop · Bill Reader API — Phase 1 (auth) built &amp; verified ·
+  source docs: <code>README.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>docs/AUTH.md</code>
+</footer>
+
+<script>
+  // Tabs for request flows
+  const tabs = [...document.querySelectorAll('.tab')];
+  const panels = tabs.map(t => document.getElementById(t.getAttribute('aria-controls')));
+  tabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => select(i));
+    tab.addEventListener('keydown', e => {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const next = (i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+        tabs[next].focus(); select(next);
+      }
+    });
+  });
+  function select(idx) {
+    tabs.forEach((t, j) => {
+      t.setAttribute('aria-selected', j === idx ? 'true' : 'false');
+      panels[j].hidden = j !== idx;
+    });
+  }
+</script>
+</body>
+</html>

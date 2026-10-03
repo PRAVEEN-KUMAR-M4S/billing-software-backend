@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bill Reader API — Development Plan (Phase 2 → Ship)</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --ink:#1b2130; --muted:#5b6478; --card:#ffffff;
+    --line:#e3e7f0; --accent:#3b5bdb; --accent-soft:#eef1ff;
+    --router:#2f6fed;  --router-bg:#e8f0fe;
+    --schema:#7048e8;  --schema-bg:#f1ecfe;
+    --service:#0ca678; --service-bg:#e6f7f2;
+    --model:#f08c00;   --model-bg:#fff3e2;
+    --deps:#e64980;    --deps-bg:#fdeaf2;
+    --ai:#7048e8;      --ai-bg:#f1ecfe;
+    --danger:#d6336c;  --ok:#0ca678; --warn:#f08c00;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px -12px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65}
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+  .wrap{max-width:1060px;margin:0 auto;padding:0 20px}
+  header.hero{background:linear-gradient(135deg,#10162b 0%,#251d4d 55%,#7048e8 100%);color:#fff;padding:52px 0 44px;position:relative;overflow:hidden}
+  .eyebrow{display:inline-block;font-size:13px;letter-spacing:.14em;text-transform:uppercase;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:4px 12px;border-radius:999px;margin-bottom:14px}
+  h1{font-size:clamp(27px,4.6vw,42px);line-height:1.15;margin:0 0 10px}
+  .sub{font-size:17px;color:#d9d4ff;max-width:74ch;margin:0}
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav.toc ul{display:flex;gap:4px;list-style:none;margin:0;padding:8px 0;overflow-x:auto}
+  nav.toc a{display:block;white-space:nowrap;font-size:13.5px;color:var(--muted);text-decoration:none;padding:6px 11px;border-radius:999px}
+  nav.toc a:hover,nav.toc a:focus{background:var(--accent-soft);color:var(--accent)}
+  section{padding:42px 0 6px}
+  h2{font-size:25px;margin:0 0 6px;letter-spacing:-.01em}
+  h3{font-size:17.5px;margin:24px 0 8px}
+  h4{font-size:15px;margin:18px 0 6px}
+  .lede{color:var(--muted);margin:0 0 20px;max-width:82ch}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
+  .grid{display:grid;gap:16px}
+  .grid>*{min-width:0}
+  @media(min-width:820px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}}
+  code{font-family:var(--mono);font-size:.9em;background:#eef1f7;border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  pre{background:#10162b;color:#dbe2ff;border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:13px;line-height:1.6;margin:10px 0}
+  pre code{background:none;border:none;padding:0;color:inherit;font-size:inherit}
+  .pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;letter-spacing:.02em}
+  .p-router{background:var(--router-bg);color:var(--router)}
+  .p-schema{background:var(--schema-bg);color:var(--schema)}
+  .p-service{background:var(--service-bg);color:var(--service)}
+  .p-model{background:var(--model-bg);color:var(--model)}
+  .p-deps{background:var(--deps-bg);color:var(--deps)}
+  .p-ai{background:var(--ai-bg);color:var(--ai)}
+  .p-new{background:#fff9db;color:#9a6700}
+  .callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 12px 12px 0;padding:14px 18px;margin:16px 0;font-size:15px}
+  .callout.warn{border-color:var(--warn);background:var(--model-bg)}
+  .callout.bad{border-color:var(--danger);background:var(--deps-bg)}
+  .callout.ok{border-color:var(--ok);background:var(--service-bg)}
+  .callout b{display:block;margin-bottom:2px}
+  .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card)}
+  table{width:100%;border-collapse:collapse;font-size:14.5px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:#f2f4f9}
+  tr:last-child td{border-bottom:none}
+  /* phase timeline */
+  .phases{display:grid;gap:0;margin-top:8px}
+  .phase{display:grid;grid-template-columns:54px 1fr;gap:16px;position:relative;padding-bottom:22px}
+  .phase::before{content:"";position:absolute;left:26px;top:44px;bottom:0;width:2px;background:var(--line)}
+  .phase:last-child::before{display:none}
+  .phase .num{width:54px;height:44px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:15px;background:#fff;border:2px solid var(--line);color:var(--muted);z-index:1}
+  .phase.done .num{background:var(--service-bg);border-color:var(--ok);color:#087f5b}
+  .phase.now .num{background:var(--accent);border-color:var(--accent);color:#fff}
+  .phase .body{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px 18px}
+  .phase .body h3{margin:0 0 4px;font-size:17px}
+  .phase .meta{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+  .phase .body p{margin:6px 0;font-size:14.5px}
+  .checkpoint{background:var(--service-bg);border:1px dashed var(--ok);border-radius:10px;padding:8px 12px;font-size:13.5px;margin-top:8px}
+  .checkpoint b{color:#087f5b}
+  .estimate{font-size:12.5px;color:var(--muted)}
+  /* flow */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:8px}
+  .fnode{background:var(--card);border:1.5px solid var(--line);border-radius:12px;padding:9px 13px;text-align:center;min-width:118px;box-shadow:var(--shadow);font-size:13.5px}
+  .fnode b{display:block;font-size:13.5px}
+  .fnode span{font-size:11.5px;color:var(--muted)}
+  .fnode.ai{border-color:var(--ai);background:var(--ai-bg)}
+  .fnode.check{border-color:var(--ok);background:var(--service-bg)}
+  .fnode.fix{border-color:var(--danger);background:var(--deps-bg)}
+  .arrow{color:var(--muted);font-size:17px;animation:nudge 1.6s ease-in-out infinite}
+  @keyframes nudge{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+  /* state machine */
+  .states{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:6px}
+  .state{border-radius:999px;padding:8px 18px;font-weight:700;font-size:14px;border:2px solid}
+  .s-upload{border-color:var(--router);background:var(--router-bg);color:var(--router)}
+  .s-extract{border-color:var(--ai);background:var(--ai-bg);color:var(--ai)}
+  .s-ready{border-color:var(--ok);background:var(--service-bg);color:#087f5b}
+  .s-fix{border-color:var(--danger);background:var(--deps-bg);color:var(--danger)}
+  .s-saved{border-color:var(--model);background:var(--model-bg);color:#b45309}
+  /* decision cards */
+  .decision{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)}
+  .decision .q{font-weight:700;font-size:15px;margin-bottom:4px}
+  .decision .rec{background:var(--service-bg);border-radius:8px;padding:8px 10px;font-size:13.5px;margin:8px 0}
+  .decision .rec b{color:#087f5b}
+  .decision p{font-size:14px;color:var(--muted);margin:6px 0}
+  .yes{color:var(--ok);font-weight:700}
+  .no{color:var(--danger);font-weight:700}
+  ul.tight{margin:8px 0;padding-left:20px}
+  ul.tight li{margin:4px 0;font-size:14.5px}
+  .gl{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+  .gl b{display:block;color:var(--ai);font-size:14.5px}
+  .gl p{margin:4px 0 0;font-size:13.5px;color:var(--muted)}
+  footer{margin-top:52px;padding:24px 0 40px;border-top:1px solid var(--line);color:var(--muted);font-size:13.5px;text-align:center}
+  a{color:var(--accent)}
+  .svgscroll{overflow-x:auto}
+  @media(max-width:760px){.svgscroll svg{min-width:660px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Roadmap · Phase 2 → Ship</span>
+    <h1>The plan: from auth to an AI feature that ships</h1>
+    <p class="sub">Five phases, one new service module, one Claude call per bill.
+    AI integration is the core — and it's <strong>one function</strong>, not a framework.
+    This page is the whole roadmap in one place: what gets built, where it lives,
+    what “done” means, and what we deliberately will <em>not</em> build.</p>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Page sections">
+  <div class="wrap">
+    <ul>
+      <li><a href="#dest">The destination</a></li>
+      <li><a href="#glance">Plan at a glance</a></li>
+      <li><a href="#grow">Architecture to grow into</a></li>
+      <li><a href="#ai">AI integration (core)</a></li>
+      <li><a href="#checks">The cashier check</a></li>
+      <li><a href="#phases">Phase-by-phase</a></li>
+      <li><a href="#decisions">Decisions</a></li>
+      <li><a href="#notbuild">Won't build</a></li>
+      <li><a href="#risks">Risks</a></li>
+      <li><a href="#score">The score card</a></li>
+      <li><a href="#words">New words</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ================= DESTINATION ================= -->
+<section id="dest">
+  <h2>1. The destination</h2>
+  <p class="lede">One picture of the finished feature. Everything in this plan exists to make
+  this exact line work — and never silently save a wrong number.</p>
+
+  <div class="flow" role="img" aria-label="Flow: photo upload, auth check, Claude extracts with forced tool, code checks like a cashier, either saved or sent to a fix form">
+    <div class="fnode"><b>📷 Photo</b><span>JPG/PNG upload</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="fnode"><b>Auth + size</b><span>login? file ok?</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="fnode ai"><b>Claude (vision)</b><span>forced save_bill tool</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="fnode check"><b>Your code checks</b><span>schema + maths + dates</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="fnode"><b>All good?</b><span>review screen</span></div>
+    <span class="arrow" aria-hidden="true">→</span>
+    <div class="fnode check"><b>✅ Saved</b><span>user confirms</span></div>
+    <span class="fnode fix"><b>🔧 Fix form</b><span>bad fields highlighted</span></div>
+  </div>
+
+  <div class="callout ok"><b>The rule the whole design protects</b>
+  Claude's reply is <b>untrusted input</b> — exactly like a user typing in a form. It passes
+  your schema, your maths, and your date checks, or it never reaches the database.</div>
+
+  <div class="grid g3" style="margin-top:16px">
+    <div class="card"><span class="pill p-new">You have</span><h4 style="margin-top:8px">Phase 1 ✅ Auth</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">register/login/me, <code>get_current_user</code>,
+    the 4-layer structure, docs.</p></div>
+    <div class="card"><span class="pill p-ai">You'll add</span><h4 style="margin-top:8px">5 files + 1 SDK</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">one model, two schemas, one router,
+    two small services. Plus <code>anthropic</code> and two env keys.</p></div>
+    <div class="card"><span class="pill p-model">You'll prove</span><h4 style="margin-top:8px">A measured score</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">10 real bills → “9/10 extracted
+    correctly”, with a photo of the miss. That's the card.</p></div>
+  </div>
+</section>
+
+<!-- ================= GLANCE ================= -->
+<section id="glance">
+  <h2>2. The plan at a glance</h2>
+  <p class="lede">Same checkpoints as the project brief, ordered so each phase has exactly one
+  new idea. Total: 1–2 weekends. Nothing starts before the checkpoint above it passes.</p>
+
+  <div class="phases">
+    <div class="phase done">
+      <div class="num">1</div>
+      <div class="body">
+        <h3>Authentication <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+        <p>register / login / me, bcrypt + JWT, the layer structure every later phase uses.</p>
+        <div class="checkpoint"><b>Checkpoint passed:</b> all six behaviours verified live (201 / 409 / 401 / 200).</div>
+      </div>
+    </div>
+    <div class="phase now">
+      <div class="num">2</div>
+      <div class="body">
+        <h3>Design the shape <span class="estimate">· half day</span></h3>
+        <p>Write every field on paper first — <code>shop</code>, <code>date</code>, <code>total</code>,
+        <code>currency</code>, <code>items[]</code> (name, qty, price) — then mirror it exactly in one
+        Pydantic schema and one database table. Money as whole paise, dates as ISO.</p>
+        <div class="checkpoint"><b>Checkpoint:</b> you can explain every field and its type without looking.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="num">3</div>
+      <div class="body">
+        <h3>Photo → words <span class="estimate">· half day</span></h3>
+        <p>Upload endpoint (JPG/PNG, size cap, shrunk before sending) that sends the image to Claude
+        and returns a plain-text description. No structure yet — just prove the pipe works.</p>
+        <div class="checkpoint"><b>Checkpoint:</b> Claude's plain-text description of your first real bill is correct.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="num">4</div>
+      <div class="body">
+        <h3>Force the shape <span class="estimate">· half day</span></h3>
+        <p>Define one tool, <code>save_bill</code>, whose input schema <em>is</em> your shape, and force
+        Claude to use it. The tool's input <em>is</em> your structured output. Validate with Pydantic.</p>
+        <div class="checkpoint"><b>Checkpoint:</b> every reply comes back with exactly your fields, nothing extra.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="num">5</div>
+      <div class="body">
+        <h3>Check before you save <span class="estimate">· 1 day</span></h3>
+        <p>The cashier double-check: maths (items sum to total, small rounding tolerance), ISO date
+        parse, currency sanity, “unreadable” handling. Problems → editable fix form with fields
+        highlighted → save only after the user confirms.</p>
+        <div class="checkpoint"><b>Checkpoint:</b> a bill with a wrong total gets flagged and is never saved silently.</div>
+      </div>
+    </div>
+    <div class="phase">
+      <div class="num">6</div>
+      <div class="body">
+        <h3>List, demo, ship <span class="estimate">· 1 day + eval</span></h3>
+        <p>“My Expenses” list with a monthly total, a demo button that runs 5 sample bills, deploy,
+        then run your 10 real bills (printed, handwritten, crumpled, one in Malayalam) through the
+        live link and write down the number.</p>
+        <div class="checkpoint"><b>Checkpoint / done means:</b> a measured score like “9/10”, plus a photo
+        of the one it got wrong with a note on why. The honest miss is worth more than the nine hits.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ARCHITECTURE ================= -->
+<section id="grow">
+  <h2>3. Architecture to grow into</h2>
+  <p class="lede">The layer rule from Phase 1 doesn't change — new features only <em>add</em> files
+  in the slots that already exist. No auth file changes after Phase 1.</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">The tree after Phase 6</h3>
+      <pre class="code"><code>app/
+├── app.py               # + include bills + expenses routers
+├── config.py            # + CLAUDE settings (key, model, tolerance)
+├── deps.py              # unchanged
+├── <span style="color:var(--router)">routers/</span>
+│   ├── auth.py          # unchanged
+│   ├── bills.py         <span style="color:#8a93a8">P3-5 · upload → extract → confirm</span>
+│   └── expenses.py      <span style="color:#8a93a8">P6 · list + monthly total + demo</span>
+├── <span style="color:var(--schema)">schemas/</span>
+│   ├── auth.py          # unchanged
+│   └── bill.py          <span style="color:#8a93a8">P2 · THE SHAPE + Problem/Report</span>
+├── <span style="color:var(--service)">services/</span>
+│   ├── db.py            # unchanged
+│   ├── auth.py          # unchanged
+│   ├── extraction.py    <span style="color:var(--ai)">★ THE AI MODULE (P3, grows in P4)</span>
+│   └── checks.py        <span style="color:#8a93a8">P5 · pure validation functions</span>
+└── <span style="color:var(--model)">models/</span>
+    ├── user.py          # unchanged
+    └── expense.py       <span style="color:#8a93a8">P2 · expenses table</span>
+
+app/static/index.html    <span style="color:#8a93a8">P6 · tiny page: upload + list + demo</span>
+samples/                 <span style="color:#8a93a8">P6 · 5 demo photos</span>
+uploads/                 <span style="color:#8a93a8">P3 · saved photos (git-ignored)</span>
+evals/                   <span style="color:#8a93a8">optional · 10 bills + score script</span></code></pre>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-top:0">State: who owns what (adds marked new)</h3>
+      <div class="tablewrap" style="box-shadow:none;border:none">
+      <table>
+        <thead><tr><th>State</th><th>Owner</th></tr></thead>
+        <tbody>
+          <tr><td>Secret key, token life</td><td><code>config.py</code> ← <code>.env</code></td></tr>
+          <tr><td>DB engine/sessions</td><td><code>services/db.py</code></td></tr>
+          <tr><td>Logged-in identity</td><td>the JWT</td></tr>
+          <tr><td class="pill p-new">Claude API key + model</td><td><code>config.py</code> ← <code>.env</code> (new)</td></tr>
+          <tr><td class="pill p-new">The bill shape</td><td><code>schemas/bill.py</code> — one schema used by the
+              tool, the validator, and the table's logic (new)</td></tr>
+          <tr><td class="pill p-new">Uploaded photo bytes</td><td><code>uploads/</code> folder + a path
+              column (new) — no cloud storage needed</td></tr>
+          <tr><td class="pill p-new">Extraction result</td><td><em>Nobody</em>, until the user confirms —
+              drafts live only in the HTTP response (new, deliberate)</td></tr>
+          <tr><td class="pill p-new">Money</td><td>integer paise in one column (new)</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="callout" style="margin-bottom:0"><b>Why “drafts live nowhere” matters</b>
+      The plan says never save silently. So extraction writes <em>nothing</em>; only the confirm
+      endpoint creates a row. The database can never hold an unreviewed bill.</div>
+    </div>
+  </div>
+
+  <h3>The data flow (all phases combined)</h3>
+  <div class="card">
+   <div class="svgscroll">
+    <svg viewBox="0 0 980 340" width="100%" role="img" aria-labelledby="flowTitle flowDesc" style="height:auto;display:block;max-width:980px;margin:0 auto">
+      <title id="flowTitle">Upload to saved bill data flow</title>
+      <desc id="flowDesc">Router receives upload after auth, calls extraction service which calls Claude and returns a draft, checks service validates, router returns either a fix report or saves after confirm.</desc>
+      <defs>
+        <marker id="fa" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#5b6478"/>
+        </marker>
+        <marker id="fr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="#d6336c"/>
+        </marker>
+      </defs>
+
+      <!-- client -->
+      <rect x="10" y="130" width="130" height="62" rx="12" fill="#10162b"/>
+      <text x="75" y="157" text-anchor="middle" fill="#fff" font-size="14" font-weight="700" font-family="system-ui">Client</text>
+      <text x="75" y="177" text-anchor="middle" fill="#aab4ff" font-size="11.5" font-family="system-ui">photo + token</text>
+
+      <!-- router -->
+      <rect x="190" y="40" width="200" height="86" rx="12" fill="#e8f0fe" stroke="#2f6fed" stroke-width="2"/>
+      <text x="206" y="66" font-size="14.5" font-weight="700" fill="#1d4ed8" font-family="system-ui">routers/bills.py</text>
+      <text x="206" y="88" font-size="11.5" fill="#3b4a6b" font-family="system-ui">auth + JPG/PNG + size cap</text>
+      <text x="206" y="106" font-size="11.5" fill="#3b4a6b" font-family="system-ui">save file → uploads/</text>
+
+      <!-- extraction -->
+      <rect x="470" y="40" width="230" height="86" rx="12" fill="#f1ecfe" stroke="#7048e8" stroke-width="2"/>
+      <text x="486" y="66" font-size="14.5" font-weight="700" fill="#5b21b6" font-family="system-ui">services/extraction.py</text>
+      <text x="486" y="88" font-size="11.5" fill="#4b3f72" font-family="system-ui">Claude vision + forced tool</text>
+      <text x="486" y="106" font-size="11.5" fill="#4b3f72" font-family="system-ui">→ BillData (untrusted!)</text>
+
+      <!-- claude -->
+      <rect x="770" y="40" width="190" height="86" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4"/>
+      <text x="865" y="70" text-anchor="middle" font-size="14.5" font-weight="700" fill="#6d28d9" font-family="system-ui">☁ Claude API</text>
+      <text x="865" y="92" text-anchor="middle" font-size="11.5" fill="#5b21b6" font-family="system-ui">one call, one bill</text>
+      <text x="865" y="110" text-anchor="middle" font-size="11.5" fill="#5b21b6" font-family="system-ui">save_bill tool fills itself</text>
+
+      <!-- checks -->
+      <rect x="470" y="212" width="230" height="86" rx="12" fill="#e6f7f2" stroke="#0ca678" stroke-width="2"/>
+      <text x="486" y="238" font-size="14.5" font-weight="700" fill="#087f5b" font-family="system-ui">services/checks.py</text>
+      <text x="486" y="260" font-size="11.5" fill="#2b6b57" font-family="system-ui">schema ✓  maths ✓ dates ✓</text>
+      <text x="486" y="278" font-size="11.5" fill="#2b6b57" font-family="system-ui">pure functions — easy tests</text>
+
+      <!-- fix form -->
+      <rect x="190" y="212" width="200" height="86" rx="12" fill="#fdeaf2" stroke="#e64980" stroke-width="2"/>
+      <text x="206" y="238" font-size="14.5" font-weight="700" fill="#c2255c" font-family="system-ui">Fix form</text>
+      <text x="206" y="260" font-size="11.5" fill="#7a3b53" font-family="system-ui">bad fields highlighted</text>
+      <text x="206" y="278" font-size="11.5" fill="#7a3b53" font-family="system-ui">user confirms → re-check</text>
+
+      <!-- db -->
+      <rect x="770" y="212" width="190" height="86" rx="12" fill="#fff3e2" stroke="#f08c00" stroke-width="2"/>
+      <text x="865" y="244" text-anchor="middle" font-size="14.5" font-weight="700" fill="#b45309" font-family="system-ui">🗄 expenses table</text>
+      <text x="865" y="266" text-anchor="middle" font-size="11.5" fill="#92400e" font-family="system-ui">row created only on confirm</text>
+
+      <!-- arrows -->
+      <line x1="140" y1="145" x2="188" y2="95" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+      <text x="118" y="108" font-size="11.5" fill="#5b6478" font-family="system-ui">POST /bills</text>
+
+      <line x1="390" y1="83" x2="468" y2="83" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+
+      <line x1="700" y1="70" x2="768" y2="70" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+      <line x1="768" y1="99" x2="702" y2="99" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+
+      <path d="M 585 126 L 585 210" fill="none" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+      <text x="596" y="172" font-size="11.5" fill="#5b6478" font-family="system-ui">BillData</text>
+
+      <path d="M 470 255 L 420 255 L 420 255 L 392 255" fill="none" stroke="#d6336c" stroke-width="2.2" marker-end="url(#fr)"/>
+      <text x="404" y="243" font-size="11.5" fill="#d6336c" text-anchor="middle" font-family="system-ui">problems</text>
+
+      <path d="M 300 210 L 300 140 L 390 140" fill="none" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+      <text x="240" y="132" font-size="11.5" fill="#5b6478" font-family="system-ui">re-check</text>
+
+      <path d="M 700 255 L 768 255" fill="none" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
+      <text x="734" y="243" font-size="11.5" fill="#5b6478" text-anchor="middle" font-family="system-ui">confirm</text>
+    </svg>
+   </div>
+    <p style="font-size:13.5px;color:var(--muted);margin:6px 0 0">Note the direction: the router
+    <b>orchestrates</b>, services never call each other sideways, and the database is only touched
+    at the very end. <b>All Claude-specific code sits in one box</b> — swap or break it and nothing
+    else changes.</p>
+  </div>
+</section>
+
+<!-- ================= AI INTEGRATION ================= -->
+<section id="ai">
+  <h2>4. AI integration — the core, kept small</h2>
+  <p class="lede">This is the part that feels scary and isn't. The entire AI feature is
+  <b>one module with one public function</b>. Everything else is ordinary backend work you
+  already know.</p>
+
+  <div class="grid g3">
+    <div class="card"><span class="pill p-ai">Fact 1</span><h4 style="margin-top:8px">One call per bill</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">No agents, no chains, no loops. One HTTP
+    request to Claude's API, one response, done.</p></div>
+    <div class="card"><span class="pill p-ai">Fact 2</span><h4 style="margin-top:8px">You define the shape</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">Your Pydantic schema <em>becomes</em> the
+    tool's input schema. One definition, three users (tool, validator, docs).</p></div>
+    <div class="card"><span class="pill p-ai">Fact 3</span><h4 style="margin-top:8px">You read the input</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">The tool's filled-in input <em>is</em> the
+    structured output. Not text to parse — a dict Pydantic validates.</p></div>
+  </div>
+
+  <h3>Step A — Vision: how the photo actually reaches Claude</h3>
+  <div class="card">
+    <pre><code># You send a content list: one image block + one text block
+content = [
+  {"type": "image",  "source": {"type": "base64",
+                                "media_type": "image/jpeg",   # or image/png
+                                "data": base64.b64encode(photo_bytes).decode()}},
+  {"type": "text",   "text": "Extract this bill."}
+]</code></pre>
+    <ul class="tight">
+      <li><b>base64</b> = turning bytes into text so they can ride inside JSON. That's the whole trick.</li>
+      <li>Phone photos are big; <b>shrink before sending</b> (max edge ~1500&nbsp;px) — faster, cheaper,
+      still readable. Optional at first; add when you start sending 4&nbsp;MB photos.</li>
+      <li>Paper photos, handwriting, crumpled folds, Malayalam text — all fine; vision reads what it
+      can and should mark the rest <code>unreadable</code> (you'll say that in the prompt).</li>
+    </ul>
+  </div>
+
+  <h3>Step B — Forced tool use: why “reply in JSON” is banned</h3>
+  <div class="grid g2">
+    <div class="card" style="border-color:var(--danger)">
+      <span class="pill" style="background:var(--deps-bg);color:var(--danger)">Fragile</span>
+      <h4 style="margin-top:8px">“Please reply in JSON”</h4>
+      <pre><code>→ Here's the JSON you asked for:
+  ```json
+  { "shop": "Lulu", ... }   # sometimes
+  # sometimes wrapped in prose, sometimes
+  # truncated, sometimes wrong key names</code></pre>
+      <p style="font-size:14px;color:var(--muted);margin:4px 0 0">Works most of the time; breaks at
+      the worst time. Parsing, trimming, retrying — all yours.</p>
+    </div>
+    <div class="card" style="border-color:var(--ok)">
+      <span class="pill" style="background:var(--service-bg);color:var(--ok)">Reliable</span>
+      <h4 style="margin-top:8px">One forced tool: <code>save_bill</code></h4>
+      <pre><code>tools=[SAVE_BILL_TOOL],
+tool_choice={"type": "tool", "name": "save_bill"}
+# → response contains a tool_use block whose
+#   .input is a dict shaped EXACTLY like your
+#   schema. Guaranteed by the API, not by luck.</code></pre>
+      <p style="font-size:14px;color:var(--muted);margin:4px 0 0">The API refuses any reply that
+      doesn't fill the tool. No prose, no parsing, no “most of the time”.</p>
+    </div>
+  </div>
+
+  <div class="callout"><b>The whole AI module, honestly</b>
+  <code>app/services/extraction.py</code> will be ~40 lines: a tool definition built from your
+  Pydantic schema, one function that base64-encodes the photo and calls
+  <code>client.messages.create(...)</code> with the forced tool, and returns
+  <code>BillData.model_validate(tool_use.input)</code>. Phase 3 puts a plain-text version of the
+  same function in place; Phase 4 swaps the body — <b>the router never changes</b>.</div>
+
+  <h3>Step C — The skeleton you'll write in Phase 4</h3>
+  <div class="card">
+    <pre><code># app/services/extraction.py  — the ONLY file that talks to Claude
+import base64, os
+import anthropic
+from app.schemas.bill import BillData          # ← THE SHAPE (Phase 2)
+
+client = anthropic.Anthropic()                 # reads ANTHROPIC_API_KEY from .env
+
+SAVE_BILL_TOOL = {
+    "name": "save_bill",
+    "description": "Save the bill the user photographed.",
+    "input_schema": BillData.model_json_schema(),   # ← schema reused, not copied
+}
+
+def extract_bill(photo_bytes: bytes, media_type: str) -> BillData:
+    response = client.messages.create(
+        model=os.getenv("ANTHROPIC_MODEL"),     # set in .env — check docs for current ids
+        max_tokens=1024,
+        tools=[SAVE_BILL_TOOL],
+        tool_choice={"type": "tool", "name": "save_bill"},   # force it
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64",
+                     "media_type": media_type,
+                     "data": base64.b64encode(photo_bytes).decode()}},
+                {"type": "text", "text": PROMPT},            # short, fixed prompt
+            ],
+        }],
+    )
+    tool_use = next(b for b in response.content if b.type == "tool_use")
+    return BillData.model_validate(tool_use.input)   # untrusted → validated → usable</code></pre>
+    <p style="font-size:13.5px;color:var(--muted);margin:4px 0 0">Exact parameter names can drift
+    between SDK versions — keep the Anthropic docs page on tool use open next to you. The
+    <em>shape of the code</em> above won't change.</p>
+  </div>
+
+  <h3>Step D — The prompt: short, fixed, versioned</h3>
+  <div class="card">
+    <pre><code># One system instruction, written once:
+PROMPT = """
+Extract this receipt/bill into the save_bill tool.
+- dates: ISO format YYYY-MM-DD (never DD/MM vs MM/DD)
+- money: whole minor units (paise); no floats, no currency symbols
+- if a field is unreadable or blurry, set it to null and say why in notes
+- never guess: an honest null beats a wrong number
+"""</code></pre>
+    <ul class="tight">
+      <li>Put it in <code>config.py</code> (or a <code>prompts.py</code>) — <b>one owner</b>, not
+      scattered inside functions.</li>
+      <li>Log which prompt you used with each extraction (a column or a log line) so when the score
+      changes you know why.</li>
+      <li>If the model you pick supports structured outputs natively, that's an equivalent alternative
+      to forced tools — check current docs; either way, <b>never plain-text JSON</b>.</li>
+    </ul>
+  </div>
+
+  <h3>What one call costs you</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Dimension</th><th>Reality</th><th>What to do</th></tr></thead>
+      <tbody>
+        <tr><td><b>Latency</b></td><td>A few seconds per bill — vision + tool fill isn't instant.</td>
+            <td>Ship a simple “Extracting…” spinner; no background jobs needed at this scale.</td></tr>
+        <tr><td><b>Cost</b></td><td>Roughly pennies per bill on a mid-tier model; images are tokenized
+            by pixels, so smaller = cheaper. <em>(Check the pricing page — it changes.)</em></td>
+            <td>Resize photos; one call per upload; no retry loops.</td></tr>
+        <tr><td><b>Failure</b></td><td>API down, timeout, malformed tool input.</td>
+            <td>Map to a friendly <b>502</b>; nothing was saved, try again. Pydantic catches bad input.</td></tr>
+        <tr><td><b>Rate</b></td><td>You're a demo, not Stripe.</td>
+            <td>No rate limiting yet (see “Won't build”).</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= CHECKS ================= -->
+<section id="checks">
+  <h2>5. The cashier check (validation design)</h2>
+  <p class="lede">Your code re-checks the reply before trusting it — like a cashier double-checking
+  a bill. Each check is a tiny pure function in <code>services/checks.py</code>, so you can test
+  them without a server, a photo, or Claude.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>Check</th><th>Catches</th><th>On failure</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td><b>Pydantic schema</b> — required fields, types, lengths</td>
+            <td>Missing/incorrect structure from the tool</td><td>“Couldn't read this bill” → fix form</td></tr>
+        <tr><td>2</td><td><b>Maths</b> — Σ(qty × price) ≈ total, tolerance ±2 paise (rounding)</td>
+            <td>Hallucinated or mis-added items — the #1 AI failure</td><td>Flag total + items, show both numbers</td></tr>
+        <tr><td>3</td><td><b>ISO date</b> — <code>date.fromisoformat()</code> succeeds</td>
+            <td>12/03 ambiguity, impossible dates</td><td>Flag the date field</td></tr>
+        <tr><td>4</td><td><b>Currency</b> — in your allowed set (e.g. INR)</td>
+            <td>Model assuming $ on an Indian bill</td><td>Flag currency, default prefilled</td></tr>
+        <tr><td>5</td><td><b>Unreadable</b> — nulls allowed where the prompt promised them</td>
+            <td>Blurry photos, folded corners</td><td>Not an error → straight to fix form</td></tr>
+        <tr><td>6</td><td><b>Sane bounds</b> — total &gt; 0, qty ≥ 1, shop non-empty</td>
+            <td>Garbage numbers</td><td>Flag the field</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The state machine (this is the whole UX)</h3>
+  <div class="card">
+    <div class="states" role="img" aria-label="States: uploading, extracting, then either ready or needs fix, then saved after confirm">
+      <span class="state s-upload">Uploading</span>
+      <span class="arrow" aria-hidden="true">→</span>
+      <span class="state s-extract">Extracting (Claude)</span>
+      <span class="arrow" aria-hidden="true">→</span>
+      <span class="state s-ready">Ready (all checks pass)</span>
+      <span class="arrow" aria-hidden="true">→</span>
+      <span class="state s-saved">💾 Saved (user confirmed)</span>
+    </div>
+    <div class="states" style="margin-top:10px">
+      <span class="state s-upload" style="visibility:hidden">Uploading</span>
+      <span class="arrow" aria-hidden="true" style="visibility:hidden">→</span>
+      <span class="state s-extract" style="visibility:hidden">Extracting</span>
+      <span class="arrow" aria-hidden="true">↙</span>
+      <span class="state s-fix">Needs fix (fields highlighted)</span>
+      <span class="arrow" aria-hidden="true">→ edit →</span>
+      <span class="state s-ready">Re-check</span>
+    </div>
+    <p style="font-size:13.5px;color:var(--muted);margin:12px 0 0">
+    <b>Hard rule:</b> there is no arrow from “Extracting” to “Saved”. The only path into the
+    database runs through a human confirming a check-passing draft. That's how the honest 9/10
+    number stays honest.</p>
+  </div>
+</section>
+
+<!-- ================= PHASES ================= -->
+<section id="phases">
+  <h2>6. Phase-by-phase: files, work, checkpoint</h2>
+  <p class="lede">Each phase = one new idea + a handful of files. Do them in order; the checkpoint
+  is a real test, not a feeling.</p>
+
+  <div class="grid g2">
+    <div class="card" style="border-top:4px solid var(--model)">
+      <h3 style="margin-top:0">Phase 2 — The shape <span class="estimate">· half day</span></h3>
+      <p><b>Start on paper.</b> Table of fields with types and required/optional marks. Then code it once:</p>
+      <ul class="tight">
+        <li><code>schemas/bill.py</code> — <code>BillItem(name, qty, price_minor)</code>,
+        <code>BillData(shop, date, currency, total_minor, items, notes)</code></li>
+        <li><code>models/expense.py</code> — same fields + <code>user_id</code>, <code>image_path</code>,
+        <code>created_at</code>; <code>items</code> as a JSON column <em>to start</em></li>
+        <li>Decide money &amp; dates now (see §7) — changing later is painful</li>
+      </ul>
+      <div class="checkpoint"><b>Checkpoint:</b> explain every field and its type without looking.</div>
+    </div>
+
+    <div class="card" style="border-top:4px solid var(--router)">
+      <h3 style="margin-top:0">Phase 3 — Photo → words <span class="estimate">· half day</span></h3>
+      <p>Prove the pipe before adding structure:</p>
+      <ul class="tight">
+        <li><code>routers/bills.py</code> — <code>POST /bills/describe</code>: auth, JPG/PNG check,
+        size cap (e.g. 5&nbsp;MB), save to <code>uploads/</code>, return text</li>
+        <li><code>services/extraction.py</code> — <code>describe_bill() → str</code> (no tools yet)</li>
+        <li><code>.env</code> — <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_MODEL</code>; deps:
+        <code>uv add anthropic</code></li>
+        <li>Optional: resize with Pillow (worth it before Phase 6)</li>
+      </ul>
+      <div class="checkpoint"><b>Checkpoint:</b> plain-text description of your first real bill is correct.</div>
+    </div>
+
+    <div class="card" style="border-top:4px solid var(--ai)">
+      <h3 style="margin-top:0">Phase 4 — Force the shape <span class="estimate">· half day</span></h3>
+      <p>Swap the body of the service, keep everything else:</p>
+      <ul class="tight">
+        <li>Add <code>SAVE_BILL_TOOL</code> + forced <code>tool_choice</code>; function now returns
+        <code>BillData</code></li>
+        <li>Route becomes <code>POST /bills/extract</code>, returns the draft (still <b>no DB write</b>)</li>
+        <li>Delete the “describe” path — one way to do things</li>
+        <li>Try it against: printed, handwritten, crumpled photos</li>
+      </ul>
+      <div class="checkpoint"><b>Checkpoint:</b> every reply has exactly your fields, nothing extra.</div>
+    </div>
+
+    <div class="card" style="border-top:4px solid var(--service)">
+      <h3 style="margin-top:0">Phase 5 — Check before save <span class="estimate">· 1 day</span></h3>
+      <p>The cashier (§5) plus the human step:</p>
+      <ul class="tight">
+        <li><code>services/checks.py</code> — <code>check_bill(bill) → list[Problem]</code>, pure</li>
+        <li>Response: <code>{draft, problems[]}</code>; problems carry <code>field</code> + message</li>
+        <li><code>POST /bills/confirm</code> — accepts edited draft, <b>re-runs checks</b>, then writes
+        the row (auth: only your own bills)</li>
+        <li>Test the adversarial case: hand-edit a total to be wrong → must be flagged, never saved</li>
+      </ul>
+      <div class="checkpoint"><b>Checkpoint:</b> wrong total flagged, never saved silently.</div>
+    </div>
+
+    <div class="card" style="border-top:4px solid var(--deps)">
+      <h3 style="margin-top:0">Phase 6 — List, demo, ship <span class="estimate">· 1 day + eval</span></h3>
+      <p>Finish the loop a user can see:</p>
+      <ul class="tight">
+        <li><code>routers/expenses.py</code> — <code>GET /expenses</code> (your rows, newest first) +
+        monthly total (sum in SQL, paise → display)</li>
+        <li><code>app/static/index.html</code> — tiny page served by FastAPI: upload form, fix form,
+        list with monthly total, <b>Demo</b> button</li>
+        <li>Demo = 5 photos in <code>samples/</code> run through the <em>real</em> pipeline</li>
+        <li>Deploy (see §7), then 10 real bills through the live link → write down the score</li>
+      </ul>
+      <div class="checkpoint"><b>Done means:</b> “N/10 extracted correctly” + the miss photo with a note.</div>
+    </div>
+
+    <div class="card" style="border-top:4px solid var(--ok)">
+      <h3 style="margin-top:0">Optional — Eval script <span class="estimate">· 1 hour, high value</span></h3>
+      <p>Turns your score from a claim into a command you can rerun after any change:</p>
+      <ul class="tight">
+        <li><code>evals/bills/</code> — the 10 photos + <code>expected.json</code> (right answers)</li>
+        <li><code>uv run python -m evals.run</code> — runs each photo through
+        <code>extract_bill</code> + checks, prints <code>score: 9/10</code> and what failed</li>
+        <li>Costs ~10 calls per run (pennies) — run it before you change the prompt</li>
+      </ul>
+      <div class="checkpoint"><b>Why:</b> “9/10” on your card, reproducible in front of anyone.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= DECISIONS ================= -->
+<section id="decisions">
+  <h2>7. Decisions to make (recommended defaults)</h2>
+  <p class="lede">Four calls that shape everything after them. Recommended answers first —
+  accept them or overrule them consciously, but decide in Phase 2, not Phase 5.</p>
+
+  <div class="grid g2">
+    <div class="decision">
+      <div class="q">1 · How do we store money?</div>
+      <div class="rec"><b>Recommended:</b> whole minor units — <code>total_minor INTEGER</code> (paise).
+      Display ÷100.</div>
+      <p><span class="yes">✓</span> Exact arithmetic, no float drift, matches the plan's warning.
+      <span class="no">✗</span> You must remember “this number is paise” — name columns
+      <code>*_minor</code> so future-you knows.</p>
+    </div>
+    <div class="decision">
+      <div class="q">2 · Items: second table or JSON column?</div>
+      <div class="rec"><b>Recommended:</b> JSON column to start (SQLite + SQLAlchemy JSON type).</div>
+      <p><span class="yes">✓</span> One table, trivial reads, no joins — the plan explicitly allows it.
+      <span class="no">✗</span> “find all bills containing coffee” needs a real table later — a
+      deliberate, cheap upgrade.</p>
+    </div>
+    <div class="decision">
+      <div class="q">3 · Which currency, and which Claude model?</div>
+      <div class="rec"><b>Recommended:</b> INR (bills include Malayalam) in <code>config.py</code>;
+      a current vision-capable mid-tier model in <code>.env</code>.</div>
+      <p>Check Anthropic's docs/pricing for the current model id — they change. Put the choice in
+      <code>.env</code> so switching is one line, and note: ISO dates + explicit currency in the
+      prompt either way.</p>
+    </div>
+    <div class="decision">
+      <div class="q">4 · Where does it go live?</div>
+      <div class="rec"><b>Recommended:</b> one simple PaaS (Render / Railway / Fly) with SQLite
+      <em>only if</em> it has a persistent disk; otherwise add a small Postgres.</div>
+      <p>Gotcha: on ephemeral hosts, SQLite wipes on every redeploy — fine for a demo day, brutal
+      mid-eval. Decide before Phase 6, not during it. The <code>DATABASE_URL</code> switch is the
+      only code change.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= NOT BUILD ================= -->
+<section id="notbuild">
+  <h2>8. What we will NOT build (on purpose)</h2>
+  <p class="lede">Every item below is real engineering someone eventually needs — and all of it is
+  a distraction from “10 real bills, measured”. Cut list is part of the plan.</p>
+
+  <div class="grid g3">
+    <div class="card"><h4 style="margin-top:0">No AI complexity</h4>
+      <ul class="tight">
+        <li>No agent loops / multi-step chains</li>
+        <li>No LangChain or framework — the SDK is 3 calls</li>
+        <li>No retries-with-backoff beyond “user clicks again”</li>
+        <li>No fine-tuning, no embeddings, no vector DB</li>
+        <li>No OCR fallback if Claude fails — report and move on</li>
+      </ul>
+    </div>
+    <div class="card"><h4 style="margin-top:0">No backend ceremony</h4>
+      <ul class="tight">
+        <li>No message queues / background workers (a few seconds is fine)</li>
+        <li>No Redis, no cache layer</li>
+        <li>No refresh tokens / email verification (still!)</li>
+        <li>No Alembic migrations — <code>create_all</code> while schema is young</li>
+        <li>No rate limiting until public</li>
+      </ul>
+    </div>
+    <div class="card"><h4 style="margin-top:0">No product scope</h4>
+      <ul class="tight">
+        <li>No categories, budgets, charts, CSV export</li>
+        <li>No sharing / teams / roles</li>
+        <li>No photo storage in S3 — <code>uploads/</code> folder</li>
+        <li>No edit-history / audit trail</li>
+        <li>No mobile app — one static HTML page</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout warn"><b>Rule of thumb</b>
+  If it doesn't move the N/10 number or the demo forward this fortnight, it's Phase 7+.
+  Write it on a “later” list instead of building it “while we're here”.</div>
+</section>
+
+<!-- ================= RISKS ================= -->
+<section id="risks">
+  <h2>9. Risks &amp; honest failure modes</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Risk</th><th>What it looks like</th><th>Built-in answer</th></tr></thead>
+      <tbody>
+        <tr><td><b>Hallucinated line items</b></td><td>Items that were never on the bill</td>
+            <td>Maths check + user confirms every draft; fix form makes it one tap to remove</td></tr>
+        <tr><td><b>Maths doesn't add up</b></td><td>Σitems ≠ total (discounts, rounding)</td>
+            <td>Tolerance of a couple of paise; real mismatch → flagged, never silent</td></tr>
+        <tr><td><b>Date ambiguity</b></td><td>12/03 read as March or December</td>
+            <td>ISO only, in the prompt + <code>fromisoformat()</code> gate</td></tr>
+        <tr><td><b>Blurry / crumpled photo</b></td><td>Model guesses instead of skipping</td>
+            <td>Prompt says null + reason beats guessing; nulls route to fix form</td></tr>
+        <tr><td><b>Malayalam / handwritten</b></td><td>Shop or item names garbled</td>
+            <td>Expected — it's in your 10-bill test set; count it honestly in the score</td></tr>
+        <tr><td><b>API down mid-demo</b></td><td>502s on stage</td>
+            <td>Nothing saved, friendly message; demo bills can be pre-run once</td></tr>
+        <tr><td><b>Cost/latency creep</b></td><td>Each retry bills again</td>
+            <td>Exactly one call per upload; resize images; no automatic retries</td></tr>
+        <tr><td><b>Schema churn</b></td><td>Renaming a field in 4 places</td>
+            <td>One Pydantic schema feeds tool + checks + table — change once</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= SCORE ================= -->
+<section id="score">
+  <h2>10. The score card (definition of done)</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">The measurement</h3>
+      <pre><code>SET: 10 real bills — printed, handwritten,
+     crumpled, one in Malayalam
+RUN: each through the LIVE deployed link
+SCORE: fully-correct extractions / 10
+       (shop, date, total, currency, items all right)
+
+CARD: "9 / 10 bills extracted correctly"
+      + photo of the miss + a note on why</code></pre>
+      <p style="font-size:14px;color:var(--muted);margin:4px 0 0">The honest miss is worth more
+      than the nine hits — it proves you measured instead of cherry-picked.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">What you'll be able to say afterwards</h3>
+      <ul class="tight">
+        <li>“I built structured extraction with forced tool use — the AI fills my form, my code
+        validates it.”</li>
+        <li>“I can show the exact architecture — layers, one owner per state, one AI module.”</li>
+        <li>“I have a live link and a measured number, plus a documented failure mode.”</li>
+        <li>“Validation runs before persistence — bad data can't be saved silently.”</li>
+      </ul>
+      <div class="callout ok" style="margin-bottom:0"><b>That's the hire-ready story</b>
+      Working system + measured result + honest analysis of the miss &gt; a bigger demo nobody
+      measured.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WORDS ================= -->
+<section id="words">
+  <h2>11. New words for this phase</h2>
+  <div class="grid g3">
+    <div class="gl"><b>Forced tool choice</b><p>Telling the API: “your reply <em>must</em> be a call
+    to this tool.” <code>tool_choice={"type":"tool","name":"save_bill"}</code> — the guarantee behind
+    reliable structured output.</p></div>
+    <div class="gl"><b>base64</b><p>Encoding raw bytes as text so a photo can travel inside JSON.
+    Not compression — it makes files ~33% bigger.</p></div>
+    <div class="gl"><b>Minor units</b><p>Money as integers in the smallest unit (paise). ₹12.50 →
+    <code>1250</code>. Floats are banned from money.</p></div>
+    <div class="gl"><b>Tolerance</b><p>Allow a tiny gap (±2 paise) before calling the maths
+    wrong — rounding isn't an error. Misses beyond tolerance become a flagged field.</p></div>
+    <div class="gl"><b>Untrusted input</b><p>Data you treat as user-supplied until validated —
+    Claude's reply joins this category permanently.</p></div>
+    <div class="gl"><b>Eval harness</b><p>A fixed set of inputs + expected outputs you rerun to get
+    a score. Turns “I think it works” into a number.</p></div>
+    <div class="gl"><b>Draft vs persisted</b><p>A draft exists only in a response; persisted means a
+    database row. Only confirm crosses that line.</p></div>
+    <div class="gl"><b>Prompt version</b><p>The exact instruction text used for an extraction —
+    log it so score changes are explainable.</p></div>
+    <div class="gl"><b>content block</b><p>One piece of a Claude message: an image block, a text
+    block, a tool_use block. Messages are lists of these.</p></div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  Freebuff Desktop · Bill Reader API — Development Plan Phase 2 → Ship ·
+  built on the Phase 1 architecture (<code>README.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>docs/AUTH.md</code>)
+</footer>
+
+</body>
+</html>
