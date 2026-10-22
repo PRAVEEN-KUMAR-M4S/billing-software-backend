@@ -5,11 +5,18 @@ to test and easy to reason about.
 """
 
 from datetime import datetime, timedelta, timezone
+import hashlib
+import secrets
 
 import bcrypt
 import jwt
 
-from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, ALGORITHM, SECRET_KEY
+from app.config import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    REFRESH_TOKEN_EXPIRE_DAYS,
+    SECRET_KEY,
+)
 
 
 def hash_password(password: str) -> str:
@@ -33,3 +40,23 @@ def decode_access_token(token: str) -> int | None:
         return int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
         return None
+
+
+def utcnow() -> datetime:
+    """UTC now, without timezone info (SQLite drops timezones anyway)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def hash_token(token: str) -> str:
+    """One-way hash — the DB never stores a usable refresh token."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_refresh_token() -> tuple[str, str, datetime]:
+    """Return (raw_token, token_hash, expires_at).
+
+    The raw token goes to the client; only the hash goes in the DB.
+    """
+    raw = secrets.token_urlsafe(32)  # 256 random bits — unguessable
+    expires_at = utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    return raw, hash_token(raw), expires_at

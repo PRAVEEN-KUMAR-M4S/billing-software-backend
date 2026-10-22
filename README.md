@@ -34,7 +34,8 @@ app/
 │   ├── db.py
 │   └── auth.py
 └── models/          # LAYER 4 — the storage: tables and columns
-    └── user.py
+    ├── user.py
+    └── refresh_token.py
 ```
 
 One rule to remember: **routers call services, services never call routers.**
@@ -50,11 +51,13 @@ Each folder answers one question:
 
 ## The API so far
 
-| Method | URL            | Body                        | Returns                 |
-| ------ | -------------- | --------------------------- | ----------------------- |
-| POST   | `/auth/register` | `{email, password}`       | `{id, email}` (201)     |
-| POST   | `/auth/login`    | `{email, password}`       | `{access_token}`        |
-| GET    | `/auth/me`       | — (Bearer token header)   | `{id, email}`           |
+| Method | URL              | Body                          | Returns                              |
+| ------ | ---------------- | ----------------------------- | ------------------------------------ |
+| POST   | `/auth/register` | `{email, password}`           | `{id, email}` (201)                  |
+| POST   | `/auth/login`    | `{email, password}`           | `{access_token, refresh_token}`      |
+| POST   | `/auth/refresh`  | `{refresh_token}`             | `{access_token, refresh_token}` (new pair) |
+| POST   | `/auth/logout`   | `{refresh_token}`             | nothing (204) — revokes that session |
+| GET    | `/auth/me`       | — (Bearer token header)       | `{id, email}`                        |
 
 Try it:
 
@@ -74,9 +77,20 @@ curl http://127.0.0.1:8000/auth/me \
 ## How login works (30 seconds)
 
 1. **Register** — your password is hashed with bcrypt; the plain password is never stored.
-2. **Login** — bcrypt checks the password; if right, the server signs a **JWT** containing your user id.
-3. **Every protected route** — you send `Authorization: Bearer <token>`; `get_current_user`
+2. **Login** — bcrypt checks the password; if right, the server returns **two tokens**:
+   a short-lived **access token** (30 min JWT) and a long-lived **refresh token**
+   (30 days, stored hashed in the `refresh_tokens` table).
+3. **Every protected route** — you send `Authorization: Bearer <access token>`; `get_current_user`
    checks the signature, loads your `User`, and 401s if anything is off.
+4. **When the access token expires** — `POST /auth/refresh` with the refresh token
+   trades it for a **new pair** (the old refresh token is deleted — single-use).
+5. **Logout** — `POST /auth/logout` deletes that refresh token, so no new access
+   tokens can be minted for that session.
+
+Why two tokens? The access token is stateless and can't be revoked, so it's only
+trusted for 30 minutes. The refresh token lives in the DB, so the server can
+revoke it (logout) and replace it on every use (rotation) — that's what makes
+the setup safe for a month-long login.
 
 ## Roadmap
 

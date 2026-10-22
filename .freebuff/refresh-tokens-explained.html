@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bill Reader API — Refresh Tokens Explained</title>
+<style>
+  :root{
+    --bg:#f7f8fb; --ink:#1b2130; --muted:#5b6478; --card:#ffffff;
+    --line:#e3e7f0; --accent:#3b5bdb; --accent-soft:#eef1ff;
+    --router:#2f6fed;  --router-bg:#e8f0fe;
+    --schema:#7048e8;  --schema-bg:#f1ecfe;
+    --service:#0ca678; --service-bg:#e6f7f2;
+    --model:#f08c00;   --model-bg:#fff3e2;
+    --deps:#e64980;    --deps-bg:#fdeaf2;
+    --danger:#d6336c;  --danger-bg:#fdeef4;
+    --ok:#0ca678; --warn:#f08c00;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,24,40,.05),0 8px 24px -12px rgba(16,24,40,.18);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.65}
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px}
+  header.hero{background:linear-gradient(135deg,#10162b 0%,#1d2b64 55%,#3b5bdb 100%);color:#fff;padding:56px 0 48px;position:relative;overflow:hidden}
+  header.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(600px 240px at 85% 10%,rgba(255,255,255,.14),transparent 70%);pointer-events:none}
+  .eyebrow{display:inline-block;font-size:13px;letter-spacing:.14em;text-transform:uppercase;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);padding:4px 12px;border-radius:999px;margin-bottom:14px}
+  h1{font-size:clamp(28px,5vw,44px);line-height:1.15;margin:0 0 10px}
+  .sub{font-size:17px;color:#cfd8ff;max-width:70ch;margin:0}
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav.toc ul{display:flex;gap:4px;list-style:none;margin:0;padding:8px 0;overflow-x:auto}
+  nav.toc a{display:block;white-space:nowrap;font-size:14px;color:var(--muted);text-decoration:none;padding:6px 12px;border-radius:999px}
+  nav.toc a:hover,nav.toc a:focus{background:var(--accent-soft);color:var(--accent)}
+  section{padding:44px 0 8px}
+  h2{font-size:26px;margin:0 0 6px;letter-spacing:-.01em}
+  h3{font-size:18px;margin:26px 0 8px}
+  .lede{color:var(--muted);margin:0 0 22px;max-width:80ch}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
+  .grid{display:grid;gap:16px}
+  @media(min-width:760px){.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}}
+  code,.mono{font-family:var(--mono);font-size:.9em}
+  code{background:#eef1f7;border:1px solid var(--line);border-radius:6px;padding:1px 6px}
+  pre{background:#10162b;color:#dbe2ff;border-radius:12px;padding:16px 18px;overflow-x:auto;font-size:13.5px;line-height:1.6}
+  pre code{background:none;border:none;padding:0;color:inherit}
+  .pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:2px 10px;letter-spacing:.02em}
+  .p-router{background:var(--router-bg);color:var(--router)}
+  .p-schema{background:var(--schema-bg);color:var(--schema)}
+  .p-service{background:var(--service-bg);color:var(--service)}
+  .p-model{background:var(--model-bg);color:var(--model)}
+  .p-deps{background:var(--deps-bg);color:var(--deps)}
+  .callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 10px 10px 0;padding:12px 16px;margin:16px 0;font-size:15px}
+  .callout.warn{border-color:var(--warn);background:var(--model-bg)}
+  .callout.danger{border-color:var(--danger);background:var(--danger-bg)}
+  .callout b{color:var(--ink)}
+  table.tbl{width:100%;border-collapse:collapse;font-size:14.5px;margin-top:10px}
+  table.tbl th{background:#f2f4fa;text-align:left;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  table.tbl th,table.tbl td{border:1px solid var(--line);padding:10px 12px;vertical-align:top}
+  table.tbl tr:nth-child(even) td{background:#fbfcfe}
+  .st{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:2px 10px;white-space:nowrap}
+  .st-ok{background:var(--service-bg);color:var(--service)}
+  .st-no{background:var(--danger-bg);color:var(--danger)}
+  /* token cards */
+  .tok{border-radius:var(--radius);padding:20px;border:1.5px solid}
+  .tok h3{margin:0 0 4px;font-size:17px;display:flex;align-items:center;gap:10px}
+  .tok .badge{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;border-radius:999px;padding:3px 10px}
+  .tok dl{margin:12px 0 0;font-size:14px}
+  .tok dt{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em;margin-top:10px}
+  .tok dd{margin:1px 0 0;font-weight:600}
+  .tok-access{border-color:#b6c6f8;background:linear-gradient(180deg,#f4f7ff,#fff)}
+  .tok-access .badge{background:var(--router-bg);color:var(--router)}
+  .tok-refresh{border-color:#f8c88f;background:linear-gradient(180deg,#fff8ef,#fff)}
+  .tok-refresh .badge{background:var(--model-bg);color:var(--model)}
+  .sample{font-family:var(--mono);font-size:12px;background:#fff;border:1px dashed var(--line);border-radius:8px;padding:8px 10px;word-break:break-all;margin-top:10px;color:var(--muted)}
+  /* dilemma */
+  .dilemma{display:grid;gap:14px}
+  @media(min-width:760px){.dilemma{grid-template-columns:1fr 1fr}}
+  .dcard{border-radius:var(--radius);padding:18px 20px;border:1.5px solid var(--line);background:#fff}
+  .dcard h4{margin:0 0 8px;font-size:16px}
+  .dcard .verdict{margin-top:10px;font-size:14px;font-weight:700}
+  .dcard.bad{border-color:#f3b6cb;background:#fff9fb}
+  .dcard.bad .verdict{color:var(--danger)}
+  .dcard.good{border-color:#9fe3cd;background:#f7fdfb}
+  .dcard.good .verdict{color:var(--service)}
+  /* timeline */
+  .tl{position:relative;margin:26px 6px 4px;height:130px}
+  .tl .rail{position:absolute;top:6px;left:0;right:0;height:4px;border-radius:4px;background:linear-gradient(90deg,var(--router),#7aa0f8)}
+  .tl .tick{position:absolute;top:0;width:2px;height:16px;background:#c9d3e8}
+  .tl .ev{position:absolute;top:0;transform:translateX(-50%);text-align:center;width:140px}
+  .tl .dot{width:16px;height:16px;border-radius:50%;margin:0 auto;border:3px solid #fff;box-shadow:0 0 0 2px currentColor}
+  .tl .ev .cap{font-size:12.5px;margin-top:8px;color:var(--muted);line-height:1.35}
+  .tl .ev .t{font-weight:700;font-size:13px}
+  .ev-login{color:var(--ok)} .ev-refresh{color:var(--accent)} .ev-expire{color:var(--warn)} .ev-logout{color:var(--danger)}
+  .tl-scope{font-size:12.5px;color:var(--muted);margin-top:4px}
+  /* zoom swap */
+  .swap{display:grid;gap:10px;margin-top:14px}
+  @media(min-width:760px){.swap{grid-template-columns:1fr auto 1fr}}
+  .swap .side{border-radius:12px;border:1.5px solid;padding:14px 16px;font-size:14px}
+  .swap .side.die{border-color:#f3b6cb;background:#fff9fb}
+  .swap .side.born{border-color:#9fe3cd;background:#f7fdfb}
+  .swap .mid{align-self:center;font-size:22px;color:var(--muted)}
+  .swap .lbl{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+  .swap .die .lbl{color:var(--danger)} .swap .born .lbl{color:var(--service)}
+  /* steps */
+  .steps{list-style:none;margin:14px 0 0;padding:0;position:relative}
+  .steps::before{content:"";position:absolute;left:17px;top:8px;bottom:8px;width:2px;background:var(--line)}
+  .steps li{position:relative;padding:0 0 18px 48px}
+  .steps .n{position:absolute;left:0;top:0;width:36px;height:36px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 0 0 4px var(--accent-soft)}
+  .steps li.bad .n{background:var(--danger);box-shadow:0 0 0 4px var(--danger-bg)}
+  .steps b{display:block}
+  .steps .cd{font-size:12.5px;color:var(--muted)}
+  .steps .cd code{font-size:11.5px}
+  /* simulator */
+  .sim{display:grid;gap:16px}
+  @media(min-width:900px){.sim{grid-template-columns:1.1fr .9fr}}
+  .sim button{font:inherit;font-size:14px;font-weight:600;border:1.5px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:9px 14px;cursor:pointer;transition:transform .12s,box-shadow .12s}
+  .sim button:hover{border-color:var(--accent);color:var(--accent);box-shadow:var(--shadow)}
+  .sim button:active{transform:translateY(1px)}
+  .sim .row{display:flex;flex-wrap:wrap;gap:8px}
+  .simlog{font-family:var(--mono);font-size:12.5px;background:#10162b;color:#dbe2ff;border-radius:10px;padding:10px 14px;height:150px;overflow-y:auto;margin:0}
+  .simlog .s200{color:#8ce99a}.simlog .s401{color:#ffa8a8}.simlog .s204{color:#a5d8ff}
+  table.simtbl{width:100%;border-collapse:collapse;font-size:13px}
+  table.simtbl th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;border-bottom:2px solid var(--line);padding:6px 8px}
+  table.simtbl td{border-bottom:1px solid var(--line);padding:7px 8px;font-family:var(--mono);font-size:12px}
+  .rowdead{opacity:.4;text-decoration:line-through}
+  .holding{font-size:13.5px}
+  .holding code{font-size:11.5px}
+  footer{margin:56px 0 40px;color:var(--muted);font-size:13.5px;border-top:1px solid var(--line);padding-top:18px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">Phase 1.5 · Authentication</span>
+    <h1>Refresh tokens:<br>how a login survives 30 days — without trusting anyone for 30 days</h1>
+    <p class="sub">One problem: the access token from Phase&nbsp;1 couldn't be revoked. The fix is a
+    second, opposite kind of token — and this page walks through every line we added.</p>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <div class="wrap">
+    <ul>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#tokens">Two tokens</a></li>
+      <li><a href="#lifecycle">The lifecycle</a></li>
+      <li><a href="#flow">The refresh call</a></li>
+      <li><a href="#db">What's in the DB</a></li>
+      <li><a href="#sim">Simulator</a></li>
+      <li><a href="#attacks">Attack table</a></li>
+      <li><a href="#code">Code map</a></li>
+      <li><a href="#try">Try it</a></li>
+      <li><a href="#skipped">Skipped on purpose</a></li>
+    </ul>
+  </div>
+</nav>
+
+<main class="wrap">
+
+<!-- ================= 1. THE PROBLEM ================= -->
+<section id="problem">
+  <h2>1 · The problem with one token</h2>
+  <p class="lede">A JWT is <b>stateless</b>: the server doesn't store it, it just checks the signature.
+  Great for speed — terrible for control. You can't un-issue one, so you must pick its lifetime
+  <em>before</em> you know if it will be stolen. That forces an impossible trade-off:</p>
+
+  <div class="dilemma">
+    <div class="dcard bad">
+      <h4>One long-lived token <span class="pill p-router">old setup · 24&nbsp;h</span></h4>
+      <p style="margin:0;font-size:14.5px">Stay logged in for a day, zero friction. But the token is a
+      key that <b>works until it expires</b>. Steal it once and you're the user until midnight —
+      and "logout" does nothing, because there's nothing stored to delete.</p>
+      <p class="verdict">✗ Convenient but uncontrollable</p>
+    </div>
+    <div class="dcard bad">
+      <h4>One short-lived token <span class="pill p-router">e.g. 15 min</span></h4>
+      <p style="margin:0;font-size:14.5px">A thief gets at most 15 minutes. But so does the legitimate
+      user — every quarter-hour they get 401 and must type their password again. Nobody ships that.</p>
+      <p class="verdict">✗ Safe but unusable</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:18px">
+    <b>The escape hatch:</b> use <em>both</em>. A short-lived token for everyday requests, plus a
+    long-lived token whose <b>only job</b> is to mint new short-lived ones. Make the long one
+    <b>stateful</b> (a database row) and it becomes controllable: revocable, single-use, replaceable.
+  </div>
+</section>
+
+<!-- ================= 2. TWO TOKENS ================= -->
+<section id="tokens">
+  <h2>2 · The two tokens, side by side</h2>
+  <p class="lede">Both are born at <code>POST /auth/login</code>. They could not be more different.</p>
+
+  <div class="grid g2">
+    <div class="tok tok-access">
+      <h3><span class="badge">Access token</span> does the work</h3>
+      <p style="margin:6px 0 0;font-size:14px">Sent on <em>every</em> request as
+      <code>Authorization: Bearer …</code>. Validated by signature only — the DB is never touched.</p>
+      <div class="sample">eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzk…<br><b>JWT · signed with SECRET_KEY</b></div>
+      <dl>
+        <dt>Lifetime</dt><dd>30 minutes</dd>
+        <dt>Stored server-side</dt><dd>Nowhere — stateless</dd>
+        <dt>Can be revoked?</dt><dd style="color:var(--danger)">No — it simply expires</dd>
+        <dt>If stolen</dt><dd>Useful for ≤ 30 min</dd>
+      </dl>
+    </div>
+    <div class="tok tok-refresh">
+      <h3><span class="badge">Refresh token</span> mints new pairs</h3>
+      <p style="margin:6px 0 0;font-size:14px">Used <em>once</em>, in the body of
+      <code>POST /auth/refresh</code>, only when the access token dies. The server looks it up in the DB.</p>
+      <div class="sample">GvH4kQ2r7Tm…4xZw <b>· 43 chars, 256 random bits</b><br><code>secrets.token_urlsafe(32)</code></div>
+      <dl>
+        <dt>Lifetime</dt><dd>30 days</dd>
+        <dt>Stored server-side</dt><dd><b>sha256 hash</b> in <code>refresh_tokens</code></dd>
+        <dt>Can be revoked?</dt><dd style="color:var(--ok)">Yes — delete the row</dd>
+        <dt>If stolen</dt><dd>Dies on the next refresh (single-use)</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="callout">
+    <b>Why the refresh token <em>can</em> be revoked:</b> because the server has state for it — a row.
+    A row can be deleted. That's the whole trick: <b>short + stateless for speed, long + stateful for control.</b>
+  </div>
+</section>
+
+<!-- ================= 3. LIFECYCLE ================= -->
+<section id="lifecycle">
+  <h2>3 · One month of login, zoomed twice</h2>
+  <p class="lede">The month view: access tokens burn down every 30 minutes and are replaced silently.
+  The refresh token itself changes too — each refresh <b>rotates</b> it. In 30 days one login causes
+  ~1,440 refreshes; the user types their password once.</p>
+
+  <div class="card">
+    <div class="tl" aria-label="Timeline of a 30-day session">
+      <div class="rail"></div>
+      <!-- month view markers -->
+      <div class="tick" style="left:16%"></div><div class="tick" style="left:32%"></div>
+      <div class="tick" style="left:48%"></div><div class="tick" style="left:64%"></div>
+      <div class="tick" style="left:80%"></div>
+      <div class="ev ev-login" style="left:9%">
+        <div class="dot"></div><div class="t">Day 0 — login</div>
+        <div class="cap">password checked once → pair #1 issued</div>
+      </div>
+      <div class="ev ev-refresh" style="left:50%">
+        <div class="dot"></div><div class="t">≈1,440 refreshes</div>
+        <div class="cap">each one: old refresh deleted, new pair issued</div>
+      </div>
+      <div class="ev ev-logout" style="left:91%">
+        <div class="dot"></div><div class="t">Logout</div>
+        <div class="cap">refresh row deleted → no new pairs, ever</div>
+      </div>
+    </div>
+    <p class="tl-scope">One horizontal rail = one 30-day refresh token's life. Ticks = 5-day marks.</p>
+  </div>
+
+  <h3 style="margin-top:22px">Zoom in on a single refresh — the moment of rotation</h3>
+  <p class="lede" style="margin-bottom:10px">This is the security core. Rotation means the client's
+  refresh token is a <b>one-time pad</b>: after use it no longer exists on the server.</p>
+
+  <div class="swap">
+    <div class="side die">
+      <span class="lbl">Dies at the server</span>
+      <p style="margin:8px 0 0">Row <code>token_hash = h(A)</code> is <b>deleted</b> in the same
+      commit that issues the new pair. Replaying token A → <span class="st st-no">401</span></p>
+    </div>
+    <div class="mid" aria-hidden="true">⟶</div>
+    <div class="side born">
+      <span class="lbl">Born at the server</span>
+      <p style="margin:8px 0 0">New row <code>h(B)</code> + fresh access token.
+      Client now holds pair <b>B</b>; A is garbage everywhere.</p>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <b>Side effect worth noticing:</b> the access token is <em>not</em> replaced retroactively.
+    Old (not-yet-expired) access tokens keep working until they expire. That's accepted in exchange
+    for statelessness — and it's exactly why the access lifetime was cut from 24&nbsp;h to 30&nbsp;min.
+  </div>
+</section>
+
+<!-- ================= 4. THE REFRESH CALL ================= -->
+<section id="flow">
+  <h2>4 · The refresh call, step by step</h2>
+  <p class="lede">What <code>POST /auth/refresh</code> actually does, mapped to the code in
+  <code>app/routers/auth.py</code>. Every failure exits with the <b>same message</b> — no hints for attackers.</p>
+
+  <div class="grid g2">
+    <ol class="steps">
+      <li><b>Hash what arrived</b><br><span class="cd"><code>hash_token(data.refresh_token)</code> — sha256. The raw token never matches anything in the DB.</span></li>
+      <li><b>Look up the hash</b><br><span class="cd"><code>select(RefreshToken).where(…)</code> → row missing? <span class="st st-no">401</span></span></li>
+      <li><b>Check the clock</b><br><span class="cd"><code>row.expires_at &lt; utcnow()</code> → expired? <span class="st st-no">401</span></span></li>
+      <li><b>Load the human</b><br><span class="cd"><code>session.get(User, row.user_id)</code> → account gone? <span class="st st-no">401</span></span></li>
+      <li><b>Kill the used token</b><br><span class="cd"><code>await session.delete(row)</code> — rotation happens here, not in a separate "revoke" call.</span></li>
+      <li class="bad"><b>Issue the new pair — atomically</b><br><span class="cd"><code>_issue_tokens()</code> inserts the new row and <code>commit()</code>s steps 5+6 together. Half-done rotation is impossible.</span></li>
+    </ol>
+    <div>
+<pre><code>@router.post("/refresh", response_model=TokenResponse)
+async def refresh(data: RefreshRequest, session=…):
+    row = await session.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == hash_token(data.refresh_token)))
+    if row is None or row.expires_at &lt; utcnow():
+        raise HTTPException(401, "Invalid or expired refresh token")
+
+    user = await session.get(User, row.user_id)
+    if user is None:
+        raise HTTPException(401, "Invalid or expired refresh token")
+
+    # Rotate: delete the used token, then issue the
+    # new pair (one atomic commit).
+    await session.delete(row)
+    return await _issue_tokens(user, session)</code></pre>
+      <div class="callout" style="font-size:14px">
+        <code>POST /auth/logout</code> is steps 1–2 + delete, returning <span class="st st-ok">204</span>
+        <b>even when the token is unknown</b> — logout must never leak what exists.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 5. DB ================= -->
+<section id="db">
+  <h2>5 · What the database actually stores</h2>
+  <p class="lede">One new table, four columns. The row below is the real one created during today's
+  live test (the hash column is what's actually on disk — the raw token exists only in the client).</p>
+
+  <div class="card" style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr><th>Column</th><th>Type</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>id</code></td><td>INTEGER PK</td><td>row identity</td></tr>
+        <tr><td><code>token_hash</code></td><td>String(128), <b>unique</b></td><td>sha256 of the token — <b>the raw token is never stored</b></td></tr>
+        <tr><td><code>user_id</code></td><td>FK → users.id</td><td>whose session this is; indexed for lookups</td></tr>
+        <tr><td><code>expires_at</code></td><td>DateTime</td><td>login + 30 days, stored as <b>naive UTC</b> (SQLite drops timezones)</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:14px 0 0"><span class="pill p-model">models/refresh_token.py</span>
+    <span class="mono" style="font-size:13px;color:var(--muted)">→ real row from test.db:</span></p>
+<pre style="margin-top:6px"><code>(2, 2, '56fa7ff5550403696f1b875f7617012fa5033fbd58cbd761af6d1729b52814cc', '2026-11-02 16:02:19.639277')</code></pre>
+  </div>
+
+  <div class="grid g2" style="margin-top:16px">
+    <div class="callout" style="margin:0"><b>Why hash it?</b> If the DB leaks, the attacker gets
+    hashes. A sha256 preimage of a 256-bit random string is not computable — the leak is useless
+    for logging anyone in.</div>
+    <div class="callout warn" style="margin:0"><b>Why sha256 and not bcrypt?</b> bcrypt is slow
+    <em>on purpose</em> — for human-chosen passwords. The refresh token has 256 random bits;
+    there's nothing to brute-force, so fast hashing costs nothing.</div>
+  </div>
+</section>
+
+<!-- ================= 6. SIMULATOR ================= -->
+<section id="sim">
+  <h2>6 · Drive the server yourself</h2>
+  <p class="lede">This mini-simulator runs the exact logic of <code>/auth/refresh</code> and
+  <code>/auth/logout</code> against a two-token world. Click buttons, watch the table —
+  the rows are the truth.</p>
+
+  <div class="sim">
+    <div class="card">
+      <h3 style="margin-top:0;font-size:16px">refresh_tokens table</h3>
+      <table class="simtbl" aria-live="polite">
+        <thead><tr><th>id</th><th>token_hash</th><th>expires_at</th></tr></thead>
+        <tbody id="simrows"><tr><td colspan="3" style="color:var(--muted)">— empty —</td></tr></tbody>
+      </table>
+      <p class="holding" style="margin:14px 0 4px"><b>Client currently holds:</b></p>
+      <p class="holding" id="simhold" style="margin:0"></p>
+      <div class="row" style="margin-top:16px">
+        <button id="b1">Refresh with RT-1</button>
+        <button id="b2">Refresh with RT-2</button>
+        <button id="b3">Logout with RT-2</button>
+        <button id="b4">Reset</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;font-size:16px">Server log</h3>
+      <pre class="simlog" id="simlog" aria-live="polite"></pre>
+      <p style="font-size:13px;color:var(--muted);margin:10px 0 0">
+        Notice: a 401 on a <em>used</em> token looks identical to a 401 on a <em>forged</em> one.
+        That indistinguishability is a feature.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 7. ATTACKS ================= -->
+<section id="attacks">
+  <h2>7 · What each attack gets (and doesn't get)</h2>
+  <p class="lede">The design's worth shows up when things go wrong. Four scenarios, no optimism.</p>
+
+  <div class="card" style="overflow-x:auto">
+    <table class="tbl">
+      <thead><tr><th>Scenario</th><th>What the attacker achieves</th><th>What stops them</th></tr></thead>
+      <tbody>
+        <tr><td>Access token stolen</td>
+            <td>Acts as the user… <b>for ≤ 30 minutes</b></td>
+            <td>Statelessness cuts the blast radius to the expiry — this is <em>why</em> it's short now</td></tr>
+        <tr><td>Refresh token stolen</td>
+            <td>One refresh… <b>once</b>. The legit client's next refresh 401s (its token was already consumed)</td>
+            <td>Single-use rotation. A failed legit refresh is the theft alarm</td></tr>
+        <tr><td>Database leak</td>
+            <td>Gets 64-char hashes, no tokens, no passwords (bcrypt for those)</td>
+            <td>sha256 of 256 random bits has no shortcut</td></tr>
+        <tr><td>Token guessing</td>
+            <td>Nothing — probability ~2<sup>−256</sup></td>
+            <td><code>secrets.token_urlsafe(32)</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout danger">
+    <b>Honest gap:</b> rotation stops a thief from <em>continuing</em>, but one use is one use.
+    Upgrading to full <b>reuse detection</b> (a replayed token revokes <em>every</em> session of that
+    user — "token families") is listed in §10 as a deliberate skip until real users exist.
+  </div>
+</section>
+
+<!-- ================= 8. CODE MAP ================= -->
+<section id="code">
+  <h2>8 · Where each line lives</h2>
+  <p class="lede">Five files touched, layers respected (routers → schemas/deps → services → models — arrows only downward).</p>
+
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0;font-size:16px"><span class="pill p-model">models</span> refresh_token.py <span style="color:var(--ok)">NEW</span></h3>
+      <p style="font-size:14px;margin:6px 0">The table from §5. One row per logged-in device.</p>
+      <h3 style="font-size:16px"><span class="pill p-service">services</span> auth.py <span style="color:var(--warn)">+3 pure functions</span></h3>
+      <p style="font-size:14px;margin:6px 0"><code>utcnow()</code> · <code>hash_token()</code> ·
+      <code>create_refresh_token()</code> — no FastAPI, no DB, still true to the file's promise.
+      Crypto lives here, same as bcrypt and JWT did.</p>
+      <h3 style="font-size:16px"><span class="pill p-schema">schemas</span> auth.py</h3>
+      <p style="font-size:14px;margin:6px 0"><code>TokenResponse</code> gains <code>refresh_token</code>;
+      new <code>RefreshRequest</code> is the body of refresh/logout.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;font-size:16px"><span class="pill p-router">routers</span> auth.py</h3>
+      <p style="font-size:14px;margin:6px 0"><code>login</code> now calls the shared helper
+      <code>_issue_tokens()</code>; new endpoints <code>/refresh</code> (rotate) and
+      <code>/logout</code> (revoke). All DB work stays in the router — services stay pure.</p>
+      <h3 style="font-size:16px"><span class="pill p-deps">config</span> config.py</h3>
+      <p style="font-size:14px;margin:6px 0">Two knobs, the entire policy:</p>
+<pre style="margin-top:6px"><code>ACCESS_TOKEN_EXPIRE_MINUTES = 30   # was 24 h
+REFRESH_TOKEN_EXPIRE_DAYS   = 30</code></pre>
+      <p style="font-size:14px;margin:10px 0 0">Untouched: <code>deps.py</code>, <code>/auth/me</code>,
+      <code>get_current_user</code> — access-token validation didn't change at all.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 9. TRY IT ================= -->
+<section id="try">
+  <h2>9 · The live test that proved it (all real output)</h2>
+  <p class="lede">Run against the actual server, October 3. Paste-safe.</p>
+  <div class="card" style="overflow-x:auto">
+<pre><code>BASE=http://127.0.0.1:8000
+
+# login → get the pair
+curl -s -X POST $BASE/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"refresher@example.com","password":"secret123"}'
+# → {"access_token":"…","refresh_token":"…43 chars…","token_type":"bearer"}   200
+
+# rotate: trade RT-1 for pair 2
+curl -s -X POST $BASE/auth/refresh -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"&lt;paste RT-1&gt;"}'                                       # 200 new pair
+
+# replay RT-1 — it was consumed
+curl -s -X POST $BASE/auth/refresh -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"&lt;paste RT-1&gt;"}'
+# → {"detail":"Invalid or expired refresh token"}                              401
+
+# logout kills RT-2, then RT-2 is dead too
+curl -i -X POST $BASE/auth/logout -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"&lt;paste RT-2&gt;"}'                                       # 204
+curl -s -X POST $BASE/auth/refresh -H 'Content-Type: application/json' \
+  -d '{"refresh_token":"&lt;paste RT-2&gt;"}'                                       # 401</code></pre>
+  </div>
+</section>
+
+<!-- ================= 10. SKIPPED ================= -->
+<section id="skipped">
+  <h2>10 · Deliberately not built (yet)</h2>
+  <p class="lede">Each skip is a real production feature — parked with a trigger for when to add it,
+  so "simple" stays a decision, not an oversight.</p>
+  <div class="card">
+    <table class="tbl">
+      <thead><tr><th>Skip</th><th>What production would do</th><th>Add when</th></tr></thead>
+      <tbody>
+        <tr><td>Reuse detection ("token families")</td><td>A replayed refresh token revokes <b>all</b> of that user's sessions</td><td>before real users — it's the theft alarm's escalation</td></tr>
+        <tr><td>Expired-row cleanup</td><td>Nightly <code>DELETE … WHERE expires_at &lt; now</code></td><td>whenever the table annoys you</td></tr>
+        <tr><td>Cookie transport</td><td>Refresh token in an <code>HttpOnly</code> cookie instead of JSON, so JS can't read it</td><td>when a browser front-end replaces curl</td></tr>
+        <tr><td>Per-device metadata</td><td>Store device/IP on the row, let users list &amp; kill sessions</td><td>Phase 6's "My Account"</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="padding:0">
+    Bill Reader API · Phase 1.5 — refresh tokens · files: <code>app/models/refresh_token.py</code>,
+    <code>app/services/auth.py</code>, <code>app/schemas/auth.py</code>, <code>app/routers/auth.py</code>,
+    <code>app/config.py</code> · verified live on 2026-10-03 ·
+    companion docs: <code>docs/AUTH.md</code>, <code>README.md</code>
+  </div>
+</footer>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+  // ---- rotation simulator: mirrors routers/auth.py exactly ----
+  var rows = [];   // {id, hash, exp}
+  var nextId = 1;
+  var client = {access: false, refresh: null};  // refresh = row id the client holds
+  var logEl = document.getElementById("simlog");
+  var rowsEl = document.getElementById("simrows");
+  var holdEl = document.getElementById("simhold");
+  var shortcuts = ["RT-1", "RT-2"];
+
+  function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
+  function now(){var d=new Date();return d.toISOString().slice(11,19);}
+
+  function log(status, msg){
+    var cls = status===200?"s200":status===401?"s401":"s204";
+    logEl.innerHTML += '<div class="'+cls+'">['+now()+'] '+status+'  '+esc(msg)+'</div>';
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function render(){
+    if(!rows.length){
+      rowsEl.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">— empty —</td></tr>';
+    }else{
+      rowsEl.innerHTML = rows.map(function(r){
+        return '<tr><td>'+r.id+'</td><td>h('+(r.label)+') = '+r.hash+'…</td><td>'+r.exp+'</td></tr>';
+      }).join("");
+    }
+    holdEl.innerHTML = client.access
+      ? 'access_token <code>…eyJ…</code> · refresh_token <code>'+(client.refresh?esc(client.refresh):'none')+'</code>'
+      : 'nothing — <span style="color:var(--danger)">logged out / never logged in</span>';
+  }
+  function issue(label){
+    rows.push({id:nextId, label:label, hash:Math.random().toString(16).slice(2,10), exp:"2026-11-02"});
+    var rowId = nextId++;
+    client.access = true; client.refresh = label;
+    render();
+    return rowId;
+  }
+  function findByLabel(label){
+    for(var i=0;i<rows.length;i++){ if(rows[i].label===label) return i; }
+    return -1;
+  }
+  function refresh(label){                    // steps 1–6 of §4
+    var i = findByLabel(label);
+    if(i === -1){ log(401, "POST /auth/refresh — hash not found → 401"); return; }
+    log(200, "POST /auth/refresh with "+label+" — row deleted, pair issued");
+    rows.splice(i,1);
+    issue(label==="RT-1"?"RT-2":"RT-3");
+  }
+  function logout(label){                     // steps 1–2 + delete
+    var i = findByLabel(label);
+    if(i !== -1){ rows.splice(i,1); }
+    if(client.refresh === label){ client.access=false; client.refresh=null; }
+    log(204, "POST /auth/logout with "+label+" — row gone (always 204)");
+    render();
+  }
+  function reset(){
+    rows = []; nextId = 1; client = {access:false, refresh:null};
+    logEl.innerHTML = ""; log(200, "login — pair #1 issued (RT-1)");
+    issue("RT-1");
+  }
+  document.getElementById("b1").onclick = function(){ refresh("RT-1"); };
+  document.getElementById("b2").onclick = function(){ refresh("RT-2"); };
+  document.getElementById("b3").onclick = function(){ logout("RT-2"); };
+  document.getElementById("b4").onclick = reset;
+  reset();
+})();
+</script>
+</body>
+</html>

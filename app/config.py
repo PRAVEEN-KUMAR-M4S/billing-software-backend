@@ -9,4 +9,7 @@ load_dotenv()
 # In production, put a long random value in .env — never commit .env.
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
+# Short-lived on purpose: if it leaks, it's useless soon.
+# The refresh token is what actually keeps a user logged in.
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+REFRESH_TOKEN_EXPIRE_DAYS = 30
