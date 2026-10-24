@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.routers import auth
+from app.routers import auth, bills
 from app.services.db import create_db_and_table
 
 
@@ -15,3 +15,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Bill Reader API", lifespan=lifespan)
 app.include_router(auth.router)
+app.include_router(bills.router)

@@ -25,7 +25,7 @@ Learn the shape now and it scales all the way to the bill-reading feature.
                          ▼
 ┌───────────────────────────────┐
 │  services/    "the workshop"  │  How things are done: SQL, hashing, JWT,
-└──────────────┬────────────────┘  later: calling Claude. Pure logic, no HTTP.
+└──────────────┬────────────────┘  calling Gemini, the bill checks. No HTTP.
                │  reads/writes
                ▼
 ┌───────────────────────────────┐
@@ -77,6 +77,11 @@ This is the pattern every future protected route reuses — including
 | `app/services/db.py`  | How do we talk to the database?         | async engine + session factory |
 | `app/models/user.py`  | What does a user row look like?         | SQLAlchemy table definition |
 | `app/deps.py`        | Is this caller authenticated?             | token → User |
+| `app/routers/bills.py` | Which URLs read and save bills?        | extract (draft) / confirm (row) |
+| `app/schemas/bill.py`  | What is a bill, exactly?               | one shape: Gemini, checks, confirm |
+| `app/services/extraction.py` | How do we read a photo?          | the only Gemini call |
+| `app/services/checks.py` | Is this draft trustworthy?           | pure functions, no I/O |
+| `app/models/expense.py` | What is a saved bill?                 | integer paise, ISO date |
 
 ## 4. State: who owns what
 
@@ -94,18 +99,24 @@ The plan's vocabulary already exists in this structure:
 | ------------------- | ------------------------------------- |
 | **JSON schema**     | a `schemas/bill.py` Pydantic model    |
 | **Validation**      | Pydantic (entry) + maths check (logic)|
-| **Structured output**| `services/extraction.py` calling Claude with tool use |
+| **Structured output**| `services/extraction.py` — Gemini `response_schema=BillDraft` (no "reply in JSON") |
 | **Vision**          | the photo bytes sent in that same service |
-| **Fix-it form**     | router returns 422 with highlighted fields |
+| **Fix-it form**     | router returns 422 with `problems[{field, message}]` |
 
-Phase 2 adds exactly three kinds of files, all slots that already exist:
-`models/expense.py` (the table), `schemas/bill.py` (the fixed shape),
-`routers/expenses.py` (upload + list). Nothing in auth has to change.
+Phases 2–5 add files only in slots that already exist: `schemas/bill.py` (the
+fixed shape), `models/expense.py` (the table), `services/extraction.py` (the AI
+call), `services/checks.py` (the rules), `routers/bills.py` (extract + confirm).
+Nothing in auth had to change — that is the test of the structure.
+
+`/bills/extract` writes nothing. `/bills/confirm` re-runs every check on the
+user's edited draft before inserting a row, so there is no path from a photo to
+the database that skips a human and a check.
 
 ## 6. Design choices worth knowing (and why)
 
 - **Async everything** — SQLite via `aiosqlite`, async SQLAlchemy, `async def` routes.
-  Same style you'll need when calling Claude's API, so we learn it once.
+  Same style you need when calling Gemini's API: the SDK call is blocking,
+  so `services/extraction.py` runs it in a thread and the route stays async.
 - **JWT instead of server-side sessions** — no session storage; the token carries
   the identity. Cost: tokens can't be revoked early (fine for this project).
 - **bcrypt, not SHA-256** — passwords need a slow, salted hash; fast hashes are

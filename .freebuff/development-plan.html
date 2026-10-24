@@ -124,10 +124,11 @@
   <div class="wrap">
     <span class="eyebrow">Roadmap · Phase 2 → Ship</span>
     <h1>The plan: from auth to an AI feature that ships</h1>
-    <p class="sub">Five phases, one new service module, one Claude call per bill.
-    AI integration is the core — and it's <strong>one function</strong>, not a framework.
-    This page is the whole roadmap in one place: what gets built, where it lives,
-    what “done” means, and what we deliberately will <em>not</em> build.</p>
+    <p class="sub">Five phases, one new service module, <strong>one Gemini call per bill</strong>.
+    AI integration is the core — and it's one function, not a framework. <b>Phases 2–5 are built</b>
+    (see the notes on each card); Phase 6 is next. This page is still the whole roadmap in one
+    place: what gets built, where it lives, what “done” means, and what we deliberately will
+    <em>not</em> build.</p>
   </div>
 </header>
 
@@ -157,32 +158,32 @@
   <p class="lede">One picture of the finished feature. Everything in this plan exists to make
   this exact line work — and never silently save a wrong number.</p>
 
-  <div class="flow" role="img" aria-label="Flow: photo upload, auth check, Claude extracts with forced tool, code checks like a cashier, either saved or sent to a fix form">
+  <div class="flow" role="img" aria-label="Flow: photo upload, auth check, Gemini extracts with a constrained schema, code checks like a cashier, either saved or sent to a fix form">
     <div class="fnode"><b>📷 Photo</b><span>JPG/PNG upload</span></div>
     <span class="arrow" aria-hidden="true">→</span>
     <div class="fnode"><b>Auth + size</b><span>login? file ok?</span></div>
     <span class="arrow" aria-hidden="true">→</span>
-    <div class="fnode ai"><b>Claude (vision)</b><span>forced save_bill tool</span></div>
+    <div class="fnode ai"><b>Gemini (vision)</b><span>response_schema = BillDraft</span></div>
     <span class="arrow" aria-hidden="true">→</span>
     <div class="fnode check"><b>Your code checks</b><span>schema + maths + dates</span></div>
     <span class="arrow" aria-hidden="true">→</span>
     <div class="fnode"><b>All good?</b><span>review screen</span></div>
     <span class="arrow" aria-hidden="true">→</span>
     <div class="fnode check"><b>✅ Saved</b><span>user confirms</span></div>
-    <span class="fnode fix"><b>🔧 Fix form</b><span>bad fields highlighted</span></div>
+    <div class="fnode fix"><b>🔧 Fix form</b><span>bad fields highlighted</span></div>
   </div>
 
   <div class="callout ok"><b>The rule the whole design protects</b>
-  Claude's reply is <b>untrusted input</b> — exactly like a user typing in a form. It passes
+  Gemini's reply is <b>untrusted input</b> — exactly like a user typing in a form. It passes
   your schema, your maths, and your date checks, or it never reaches the database.</div>
 
   <div class="grid g3" style="margin-top:16px">
     <div class="card"><span class="pill p-new">You have</span><h4 style="margin-top:8px">Phase 1 ✅ Auth</h4>
     <p style="font-size:14px;color:var(--muted);margin:0">register/login/me, <code>get_current_user</code>,
     the 4-layer structure, docs.</p></div>
-    <div class="card"><span class="pill p-ai">You'll add</span><h4 style="margin-top:8px">5 files + 1 SDK</h4>
-    <p style="font-size:14px;color:var(--muted);margin:0">one model, two schemas, one router,
-    two small services. Plus <code>anthropic</code> and two env keys.</p></div>
+    <div class="card"><span class="pill p-ai">Built ✅</span><h4 style="margin-top:8px">5 files + 1 SDK</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0">one model, one schema, one router,
+    two small services. Plus <code>google-genai</code> and two env keys.</p></div>
     <div class="card"><span class="pill p-model">You'll prove</span><h4 style="margin-top:8px">A measured score</h4>
     <p style="font-size:14px;color:var(--muted);margin:0">10 real bills → “9/10 extracted
     correctly”, with a photo of the miss. That's the card.</p></div>
@@ -204,48 +205,52 @@
         <div class="checkpoint"><b>Checkpoint passed:</b> all six behaviours verified live (201 / 409 / 401 / 200).</div>
       </div>
     </div>
-    <div class="phase now">
+    <div class="phase done">
       <div class="num">2</div>
       <div class="body">
-        <h3>Design the shape <span class="estimate">· half day</span></h3>
-        <p>Write every field on paper first — <code>shop</code>, <code>date</code>, <code>total</code>,
-        <code>currency</code>, <code>items[]</code> (name, qty, price) — then mirror it exactly in one
-        Pydantic schema and one database table. Money as whole paise, dates as ISO.</p>
-        <div class="checkpoint"><b>Checkpoint:</b> you can explain every field and its type without looking.</div>
+        <h3>Design the shape <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+        <p>One Pydantic schema — <code>shop</code>, <code>date</code>, <code>total_minor</code>,
+        <code>currency</code>, <code>items[]</code> (name, qty, price_minor), <code>notes</code> — copied
+        into one table. Money as whole paise, dates as ISO.</p>
+        <div class="checkpoint"><b>Checkpoint passed:</b> every field in <code>schemas/bill.py</code> is the one
+        the model fills, the checks judge, and the table stores.</div>
       </div>
     </div>
-    <div class="phase">
+    <div class="phase done">
       <div class="num">3</div>
       <div class="body">
-        <h3>Photo → words <span class="estimate">· half day</span></h3>
-        <p>Upload endpoint (JPG/PNG, size cap, shrunk before sending) that sends the image to Claude
-        and returns a plain-text description. No structure yet — just prove the pipe works.</p>
-        <div class="checkpoint"><b>Checkpoint:</b> Claude's plain-text description of your first real bill is correct.</div>
+        <h3>Photo → structured draft <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+        <p>Upload route (auth, JPG/PNG, 5&nbsp;MB cap) sends the image to Gemini in one call.
+        <b>No plain-text describe step:</b> we went straight to the constrained shape, which is the
+        same pipe with structure attached.</p>
+        <div class="checkpoint"><b>Checkpoint passed:</b> a real phone photo reaches Gemini and comes back as a draft.</div>
       </div>
     </div>
-    <div class="phase">
+    <div class="phase done">
       <div class="num">4</div>
       <div class="body">
-        <h3>Force the shape <span class="estimate">· half day</span></h3>
-        <p>Define one tool, <code>save_bill</code>, whose input schema <em>is</em> your shape, and force
-        Claude to use it. The tool's input <em>is</em> your structured output. Validate with Pydantic.</p>
-        <div class="checkpoint"><b>Checkpoint:</b> every reply comes back with exactly your fields, nothing extra.</div>
+        <h3>Constrain the shape <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+        <p>Gemini has no forced tool call; the equivalent is <code>response_mime_type="application/json"</code>
+        + <code>response_schema=BillDraft</code>. The reply arrives as <code>response.parsed</code> —
+        a Pydantic object, not text to parse.</p>
+        <div class="checkpoint"><b>Checkpoint passed:</b> the schema converts cleanly (nested items, nullable fields)
+        and invalid replies become 502, never a half-parsed bill.</div>
       </div>
     </div>
-    <div class="phase">
+    <div class="phase done">
       <div class="num">5</div>
       <div class="body">
-        <h3>Check before you save <span class="estimate">· 1 day</span></h3>
-        <p>The cashier double-check: maths (items sum to total, small rounding tolerance), ISO date
-        parse, currency sanity, “unreadable” handling. Problems → editable fix form with fields
-        highlighted → save only after the user confirms.</p>
-        <div class="checkpoint"><b>Checkpoint:</b> a bill with a wrong total gets flagged and is never saved silently.</div>
+        <h3>Check before you save <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+        <p><code>check_bill()</code> — maths (items sum to total, ±2 paise), ISO date parse, currency,
+        “unreadable” and bounds. <code>POST /bills/confirm</code> re-runs it on the edited draft, then
+        writes the row.</p>
+        <div class="checkpoint"><b>Checkpoint passed:</b> a hand-edited wrong total gets 422 and the row count stays zero.</div>
       </div>
     </div>
-    <div class="phase">
+    <div class="phase now">
       <div class="num">6</div>
       <div class="body">
-        <h3>List, demo, ship <span class="estimate">· 1 day + eval</span></h3>
+        <h3>List, demo, ship <span class="pill" style="background:var(--accent-soft);color:var(--accent);margin-left:6px">NEXT</span> <span class="estimate">· 1 day + eval</span></h3>
         <p>“My Expenses” list with a monthly total, a demo button that runs 5 sample bills, deploy,
         then run your 10 real bills (printed, handwritten, crumpled, one in Malayalam) through the
         live link and write down the number.</p>
@@ -266,28 +271,29 @@
     <div class="card">
       <h3 style="margin-top:0">The tree after Phase 6</h3>
       <pre class="code"><code>app/
-├── app.py               # + include bills + expenses routers
-├── config.py            # + CLAUDE settings (key, model, tolerance)
+├── app.py               <span style="color:#087f5b">✅ + include bills router</span>
+├── config.py            <span style="color:#087f5b">✅ + GEMINI key/model, prompt, tolerance</span>
 ├── deps.py              # unchanged
 ├── <span style="color:var(--router)">routers/</span>
 │   ├── auth.py          # unchanged
-│   ├── bills.py         <span style="color:#8a93a8">P3-5 · upload → extract → confirm</span>
+│   ├── bills.py         <span style="color:#087f5b">✅ extract → confirm</span>
 │   └── expenses.py      <span style="color:#8a93a8">P6 · list + monthly total + demo</span>
 ├── <span style="color:var(--schema)">schemas/</span>
 │   ├── auth.py          # unchanged
-│   └── bill.py          <span style="color:#8a93a8">P2 · THE SHAPE + Problem/Report</span>
+│   └── bill.py          <span style="color:#087f5b">✅ THE SHAPE: BillDraft / BillItem / Problem</span>
 ├── <span style="color:var(--service)">services/</span>
 │   ├── db.py            # unchanged
 │   ├── auth.py          # unchanged
-│   ├── extraction.py    <span style="color:var(--ai)">★ THE AI MODULE (P3, grows in P4)</span>
-│   └── checks.py        <span style="color:#8a93a8">P5 · pure validation functions</span>
+│   ├── extraction.py    <span style="color:var(--ai)">✅ ★ the Gemini call (one function)</span>
+│   └── checks.py        <span style="color:#087f5b">✅ check_bill() — pure validation</span>
 └── <span style="color:var(--model)">models/</span>
     ├── user.py          # unchanged
-    └── expense.py       <span style="color:#8a93a8">P2 · expenses table</span>
+    └── expense.py       <span style="color:#087f5b">✅ expenses table (integer paise, ISO date)</span>
 
+tests/                   <span style="color:#087f5b">✅ 23 pytest tests: checks, routes, extraction</span>
 app/static/index.html    <span style="color:#8a93a8">P6 · tiny page: upload + list + demo</span>
 samples/                 <span style="color:#8a93a8">P6 · 5 demo photos</span>
-uploads/                 <span style="color:#8a93a8">P3 · saved photos (git-ignored)</span>
+<span style="color:#8a93a8"># uploads/ — deliberately absent: photos are never stored</span>
 evals/                   <span style="color:#8a93a8">optional · 10 bills + score script</span></code></pre>
     </div>
 
@@ -300,14 +306,15 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
           <tr><td>Secret key, token life</td><td><code>config.py</code> ← <code>.env</code></td></tr>
           <tr><td>DB engine/sessions</td><td><code>services/db.py</code></td></tr>
           <tr><td>Logged-in identity</td><td>the JWT</td></tr>
-          <tr><td class="pill p-new">Claude API key + model</td><td><code>config.py</code> ← <code>.env</code> (new)</td></tr>
-          <tr><td class="pill p-new">The bill shape</td><td><code>schemas/bill.py</code> — one schema used by the
-              tool, the validator, and the table's logic (new)</td></tr>
-          <tr><td class="pill p-new">Uploaded photo bytes</td><td><code>uploads/</code> folder + a path
-              column (new) — no cloud storage needed</td></tr>
+          <tr><td class="pill p-new">Gemini key + model</td><td><code>config.py</code> ← <code>.env</code>
+              (<code>GEMINI_API_KEY</code>, <code>GEMINI_MODEL</code>)</td></tr>
+          <tr><td class="pill p-new">The bill shape</td><td><code>schemas/bill.py</code> — the same schema is
+              Gemini's <code>response_schema</code>, the checks' input, and confirm's body</td></tr>
+          <tr><td class="pill p-new">Uploaded photo bytes</td><td><em>Nobody</em> — read into memory, sent once,
+              dropped. Bills are personal data, so there is no <code>uploads/</code> folder</td></tr>
           <tr><td class="pill p-new">Extraction result</td><td><em>Nobody</em>, until the user confirms —
-              drafts live only in the HTTP response (new, deliberate)</td></tr>
-          <tr><td class="pill p-new">Money</td><td>integer paise in one column (new)</td></tr>
+              drafts live only in the HTTP response (deliberate)</td></tr>
+          <tr><td class="pill p-new">Money</td><td>integer paise in <code>total_minor</code></td></tr>
         </tbody>
       </table>
       </div>
@@ -322,7 +329,7 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
    <div class="svgscroll">
     <svg viewBox="0 0 980 340" width="100%" role="img" aria-labelledby="flowTitle flowDesc" style="height:auto;display:block;max-width:980px;margin:0 auto">
       <title id="flowTitle">Upload to saved bill data flow</title>
-      <desc id="flowDesc">Router receives upload after auth, calls extraction service which calls Claude and returns a draft, checks service validates, router returns either a fix report or saves after confirm.</desc>
+      <desc id="flowDesc">Router receives upload after auth, calls extraction service which calls Gemini and returns a draft, checks service validates, router returns either a fix report or saves after confirm.</desc>
       <defs>
         <marker id="fa" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0 0 L10 5 L0 10 z" fill="#5b6478"/>
@@ -341,19 +348,19 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
       <rect x="190" y="40" width="200" height="86" rx="12" fill="#e8f0fe" stroke="#2f6fed" stroke-width="2"/>
       <text x="206" y="66" font-size="14.5" font-weight="700" fill="#1d4ed8" font-family="system-ui">routers/bills.py</text>
       <text x="206" y="88" font-size="11.5" fill="#3b4a6b" font-family="system-ui">auth + JPG/PNG + size cap</text>
-      <text x="206" y="106" font-size="11.5" fill="#3b4a6b" font-family="system-ui">save file → uploads/</text>
+      <text x="206" y="106" font-size="11.5" fill="#3b4a6b" font-family="system-ui">photo stays in memory</text>
 
       <!-- extraction -->
       <rect x="470" y="40" width="230" height="86" rx="12" fill="#f1ecfe" stroke="#7048e8" stroke-width="2"/>
       <text x="486" y="66" font-size="14.5" font-weight="700" fill="#5b21b6" font-family="system-ui">services/extraction.py</text>
-      <text x="486" y="88" font-size="11.5" fill="#4b3f72" font-family="system-ui">Claude vision + forced tool</text>
-      <text x="486" y="106" font-size="11.5" fill="#4b3f72" font-family="system-ui">→ BillData (untrusted!)</text>
+      <text x="486" y="88" font-size="11.5" fill="#4b3f72" font-family="system-ui">Gemini vision + response_schema</text>
+      <text x="486" y="106" font-size="11.5" fill="#4b3f72" font-family="system-ui">→ BillDraft (untrusted!)</text>
 
       <!-- claude -->
       <rect x="770" y="40" width="190" height="86" rx="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6 4"/>
-      <text x="865" y="70" text-anchor="middle" font-size="14.5" font-weight="700" fill="#6d28d9" font-family="system-ui">☁ Claude API</text>
+      <text x="865" y="70" text-anchor="middle" font-size="14.5" font-weight="700" fill="#6d28d9" font-family="system-ui">☁ Gemini API</text>
       <text x="865" y="92" text-anchor="middle" font-size="11.5" fill="#5b21b6" font-family="system-ui">one call, one bill</text>
-      <text x="865" y="110" text-anchor="middle" font-size="11.5" fill="#5b21b6" font-family="system-ui">save_bill tool fills itself</text>
+      <text x="865" y="110" text-anchor="middle" font-size="11.5" fill="#5b21b6" font-family="system-ui">response_schema fills it</text>
 
       <!-- checks -->
       <rect x="470" y="212" width="230" height="86" rx="12" fill="#e6f7f2" stroke="#0ca678" stroke-width="2"/>
@@ -374,7 +381,7 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
 
       <!-- arrows -->
       <line x1="140" y1="145" x2="188" y2="95" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
-      <text x="118" y="108" font-size="11.5" fill="#5b6478" font-family="system-ui">POST /bills</text>
+      <text x="118" y="108" font-size="11.5" fill="#5b6478" font-family="system-ui">POST /bills/extract</text>
 
       <line x1="390" y1="83" x2="468" y2="83" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
 
@@ -382,7 +389,7 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
       <line x1="768" y1="99" x2="702" y2="99" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
 
       <path d="M 585 126 L 585 210" fill="none" stroke="#5b6478" stroke-width="2.2" marker-end="url(#fa)"/>
-      <text x="596" y="172" font-size="11.5" fill="#5b6478" font-family="system-ui">BillData</text>
+      <text x="596" y="172" font-size="11.5" fill="#5b6478" font-family="system-ui">BillDraft</text>
 
       <path d="M 470 255 L 420 255 L 420 255 L 392 255" fill="none" stroke="#d6336c" stroke-width="2.2" marker-end="url(#fr)"/>
       <text x="404" y="243" font-size="11.5" fill="#d6336c" text-anchor="middle" font-family="system-ui">problems</text>
@@ -396,8 +403,8 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
    </div>
     <p style="font-size:13.5px;color:var(--muted);margin:6px 0 0">Note the direction: the router
     <b>orchestrates</b>, services never call each other sideways, and the database is only touched
-    at the very end. <b>All Claude-specific code sits in one box</b> — swap or break it and nothing
-    else changes.</p>
+    at the very end. <b>All Gemini-specific code sits in one box</b> — swap or break it and nothing
+    else changes. That box is 60 lines of <code>services/extraction.py</code>.</p>
   </div>
 </section>
 
@@ -411,34 +418,38 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
   <div class="grid g3">
     <div class="card"><span class="pill p-ai">Fact 1</span><h4 style="margin-top:8px">One call per bill</h4>
     <p style="font-size:14px;color:var(--muted);margin:0">No agents, no chains, no loops. One HTTP
-    request to Claude's API, one response, done.</p></div>
+    request to Gemini's API, one response, done.</p></div>
     <div class="card"><span class="pill p-ai">Fact 2</span><h4 style="margin-top:8px">You define the shape</h4>
-    <p style="font-size:14px;color:var(--muted);margin:0">Your Pydantic schema <em>becomes</em> the
-    tool's input schema. One definition, three users (tool, validator, docs).</p></div>
-    <div class="card"><span class="pill p-ai">Fact 3</span><h4 style="margin-top:8px">You read the input</h4>
-    <p style="font-size:14px;color:var(--muted);margin:0">The tool's filled-in input <em>is</em> the
-    structured output. Not text to parse — a dict Pydantic validates.</p></div>
+    <p style="font-size:14px;color:var(--muted);margin:0">Your Pydantic schema <em>becomes</em>
+    <code>response_schema</code>. One definition, three users (the model, the checks, confirm).</p></div>
+    <div class="card"><span class="pill p-ai">Fact 3</span><h4 style="margin-top:8px">You read the parsed reply</h4>
+    <p style="font-size:14px;color:var(--muted);margin:0"><code>response.parsed</code> is already a
+    <code>BillDraft</code>. Not text to parse — an object Pydantic validated.</p></div>
   </div>
 
-  <h3>Step A — Vision: how the photo actually reaches Claude</h3>
+  <h3>Step A — Vision: how the photo actually reaches Gemini</h3>
   <div class="card">
-    <pre><code># You send a content list: one image block + one text block
-content = [
-  {"type": "image",  "source": {"type": "base64",
-                                "media_type": "image/jpeg",   # or image/png
-                                "data": base64.b64encode(photo_bytes).decode()}},
-  {"type": "text",   "text": "Extract this bill."}
-]</code></pre>
+    <pre><code># One call: prompt text + one inline image part
+from google.genai import types
+
+contents = [
+  "Extract this bill.",
+  types.Part.from_bytes(data=photo_bytes, mime_type="image/jpeg"),  # or image/png
+]
+# The SDK base64-encodes the bytes for you — no manual base64 step.</code></pre>
     <ul class="tight">
-      <li><b>base64</b> = turning bytes into text so they can ride inside JSON. That's the whole trick.</li>
-      <li>Phone photos are big; <b>shrink before sending</b> (max edge ~1500&nbsp;px) — faster, cheaper,
-      still readable. Optional at first; add when you start sending 4&nbsp;MB photos.</li>
-      <li>Paper photos, handwriting, crumpled folds, Malayalam text — all fine; vision reads what it
-      can and should mark the rest <code>unreadable</code> (you'll say that in the prompt).</li>
+      <li><b>Inline data</b> rides inside the request (total request limit: 20&nbsp;MB). Larger
+      files would need the Files API; a bill photo never does.</li>
+      <li>Phone photos are big and images are tokenised by pixels, so <b>shrink before sending</b>
+      (max edge ~1500&nbsp;px) — faster and cheaper. Not done yet: the 5&nbsp;MB cap is the only limit
+      today, so resizing is the next optimisation.</li>
+      <li>Paper photos, handwriting, crumpled folds, Malayalam text — vision reads what it can and
+      must mark the rest <code>null</code> + a note. The prompt says that; the checks enforce it.</li>
+      <li><b>The bytes are never stored</b> — no <code>uploads/</code> folder, no path column.</li>
     </ul>
   </div>
 
-  <h3>Step B — Forced tool use: why “reply in JSON” is banned</h3>
+  <h3>Step B — Structured output: why “reply in JSON” is banned</h3>
   <div class="grid g2">
     <div class="card" style="border-color:var(--danger)">
       <span class="pill" style="background:var(--deps-bg);color:var(--danger)">Fragile</span>
@@ -453,79 +464,74 @@ content = [
     </div>
     <div class="card" style="border-color:var(--ok)">
       <span class="pill" style="background:var(--service-bg);color:var(--ok)">Reliable</span>
-      <h4 style="margin-top:8px">One forced tool: <code>save_bill</code></h4>
-      <pre><code>tools=[SAVE_BILL_TOOL],
-tool_choice={"type": "tool", "name": "save_bill"}
-# → response contains a tool_use block whose
-#   .input is a dict shaped EXACTLY like your
-#   schema. Guaranteed by the API, not by luck.</code></pre>
+      <h4 style="margin-top:8px">One constrained response: <code>response_schema</code></h4>
+      <pre><code>config=types.GenerateContentConfig(
+  response_mime_type="application/json",
+  response_schema=BillDraft,      # ← your Pydantic shape
+)
+# → response.parsed is a BillDraft.
+#   The API refuses JSON that doesn't fit.</code></pre>
       <p style="font-size:14px;color:var(--muted);margin:4px 0 0">The API refuses any reply that
-      doesn't fill the tool. No prose, no parsing, no “most of the time”.</p>
+      doesn't fit the schema. No prose, no parsing, no “most of the time”. <b>Gemini has no
+      Claude-style forced tool call</b> — <code>response_schema</code> is the equivalent guarantee.</p>
     </div>
   </div>
 
   <div class="callout"><b>The whole AI module, honestly</b>
-  <code>app/services/extraction.py</code> will be ~40 lines: a tool definition built from your
-  Pydantic schema, one function that base64-encodes the photo and calls
-  <code>client.messages.create(...)</code> with the forced tool, and returns
-  <code>BillData.model_validate(tool_use.input)</code>. Phase 3 puts a plain-text version of the
-  same function in place; Phase 4 swaps the body — <b>the router never changes</b>.</div>
+  <code>app/services/extraction.py</code> is one public function: it sends one image part, passes
+  <code>response_schema=BillDraft</code>, and returns <code>response.parsed</code>. Phases 3 and 4
+  collapsed into one step — the plain-text describe route was skipped because the constrained call
+  <em>is</em> the same pipe. <b>The router only knows <code>extract_bill</code></b>, never Gemini.</div>
 
-  <h3>Step C — The skeleton you'll write in Phase 4</h3>
+  <h3>Step C — The module as it shipped</h3>
   <div class="card">
-    <pre><code># app/services/extraction.py  — the ONLY file that talks to Claude
-import base64, os
-import anthropic
-from app.schemas.bill import BillData          # ← THE SHAPE (Phase 2)
+    <pre><code># app/services/extraction.py — the ONLY file that talks to Gemini
+from google import genai
+from google.genai import types
+from app.schemas.bill import BillDraft
 
-client = anthropic.Anthropic()                 # reads ANTHROPIC_API_KEY from .env
+client = genai.Client(api_key=GEMINI_API_KEY)   # built lazily, so the app boots without a key
 
-SAVE_BILL_TOOL = {
-    "name": "save_bill",
-    "description": "Save the bill the user photographed.",
-    "input_schema": BillData.model_json_schema(),   # ← schema reused, not copied
-}
-
-def extract_bill(photo_bytes: bytes, media_type: str) -> BillData:
-    response = client.messages.create(
-        model=os.getenv("ANTHROPIC_MODEL"),     # set in .env — check docs for current ids
-        max_tokens=1024,
-        tools=[SAVE_BILL_TOOL],
-        tool_choice={"type": "tool", "name": "save_bill"},   # force it
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64",
-                     "media_type": media_type,
-                     "data": base64.b64encode(photo_bytes).decode()}},
-                {"type": "text", "text": PROMPT},            # short, fixed prompt
-            ],
-        }],
+def extract_bill(photo_bytes: bytes, mime_type: str) -> BillDraft:
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,                     # from .env, never hardcoded
+        contents=[
+            "Extract this bill.",
+            types.Part.from_bytes(data=photo_bytes, mime_type=mime_type),
+        ],
+        config=types.GenerateContentConfig(
+            system_instruction=EXTRACTION_PROMPT,   # versioned in config.py
+            response_mime_type="application/json",
+            response_schema=BillDraft,              # ← THE SHAPE, reused not copied
+            temperature=0,
+        ),
     )
-    tool_use = next(b for b in response.content if b.type == "tool_use")
-    return BillData.model_validate(tool_use.input)   # untrusted → validated → usable</code></pre>
-    <p style="font-size:13.5px;color:var(--muted);margin:4px 0 0">Exact parameter names can drift
-    between SDK versions — keep the Anthropic docs page on tool use open next to you. The
-    <em>shape of the code</em> above won't change.</p>
+    return response.parsed   # untrusted → validated → usable</code></pre>
+    <p style="font-size:13.5px;color:var(--muted);margin:4px 0 0">Parameter names drift between
+    SDK versions — this is <code>google-genai 2.32</code>. A JSON fallback
+    (<code>BillDraft.model_validate_json(response.text)</code>) covers a reply that arrived as text,
+    and every failure becomes a 502 instead of a half-parsed bill.</p>
   </div>
 
   <h3>Step D — The prompt: short, fixed, versioned</h3>
   <div class="card">
-    <pre><code># One system instruction, written once:
-PROMPT = """
-Extract this receipt/bill into the save_bill tool.
-- dates: ISO format YYYY-MM-DD (never DD/MM vs MM/DD)
+    <pre><code># config.py — one system instruction, written once, versioned
+PROMPT_VERSION = "v1"
+EXTRACTION_PROMPT = """
+Extract this receipt or bill into the provided schema.
+- date: ISO YYYY-MM-DD; never guess DD/MM vs MM/DD, null if ambiguous
+- currency: ISO 4217 code (INR unless the bill says otherwise)
 - money: whole minor units (paise); no floats, no currency symbols
-- if a field is unreadable or blurry, set it to null and say why in notes
+- if a value is unreadable, set it to null and explain why in notes
 - never guess: an honest null beats a wrong number
 """</code></pre>
     <ul class="tight">
-      <li>Put it in <code>config.py</code> (or a <code>prompts.py</code>) — <b>one owner</b>, not
-      scattered inside functions.</li>
-      <li>Log which prompt you used with each extraction (a column or a log line) so when the score
-      changes you know why.</li>
-      <li>If the model you pick supports structured outputs natively, that's an equivalent alternative
-      to forced tools — check current docs; either way, <b>never plain-text JSON</b>.</li>
+      <li>It lives in <code>config.py</code> — <b>one owner</b>, sent as
+      <code>system_instruction</code> on every call.</li>
+      <li><code>PROMPT_VERSION = "v1"</code> is stored in an <code>expenses.prompt_version</code> column,
+      so when the score changes you know which prompt produced which row.</li>
+      <li>No “reply in JSON” in the prompt — the schema does that job. Asking in prose is the fragile
+      version of a guarantee the API already gives you.</li>
     </ul>
   </div>
 
@@ -534,12 +540,12 @@ Extract this receipt/bill into the save_bill tool.
     <table>
       <thead><tr><th>Dimension</th><th>Reality</th><th>What to do</th></tr></thead>
       <tbody>
-        <tr><td><b>Latency</b></td><td>A few seconds per bill — vision + tool fill isn't instant.</td>
+        <tr><td><b>Latency</b></td><td>A few seconds per bill — vision + constrained JSON isn't instant.</td>
             <td>Ship a simple “Extracting…” spinner; no background jobs needed at this scale.</td></tr>
         <tr><td><b>Cost</b></td><td>Roughly pennies per bill on a mid-tier model; images are tokenized
             by pixels, so smaller = cheaper. <em>(Check the pricing page — it changes.)</em></td>
             <td>Resize photos; one call per upload; no retry loops.</td></tr>
-        <tr><td><b>Failure</b></td><td>API down, timeout, malformed tool input.</td>
+        <tr><td><b>Failure</b></td><td>API down, timeout, a reply that fails the schema.</td>
             <td>Map to a friendly <b>502</b>; nothing was saved, try again. Pydantic catches bad input.</td></tr>
         <tr><td><b>Rate</b></td><td>You're a demo, not Stripe.</td>
             <td>No rate limiting yet (see “Won't build”).</td></tr>
@@ -553,7 +559,7 @@ Extract this receipt/bill into the save_bill tool.
   <h2>5. The cashier check (validation design)</h2>
   <p class="lede">Your code re-checks the reply before trusting it — like a cashier double-checking
   a bill. Each check is a tiny pure function in <code>services/checks.py</code>, so you can test
-  them without a server, a photo, or Claude.</p>
+  them without a server, a photo, or Gemini.</p>
 
   <div class="tablewrap">
     <table>
@@ -580,7 +586,7 @@ Extract this receipt/bill into the save_bill tool.
     <div class="states" role="img" aria-label="States: uploading, extracting, then either ready or needs fix, then saved after confirm">
       <span class="state s-upload">Uploading</span>
       <span class="arrow" aria-hidden="true">→</span>
-      <span class="state s-extract">Extracting (Claude)</span>
+      <span class="state s-extract">Extracting (Gemini)</span>
       <span class="arrow" aria-hidden="true">→</span>
       <span class="state s-ready">Ready (all checks pass)</span>
       <span class="arrow" aria-hidden="true">→</span>
@@ -610,61 +616,61 @@ Extract this receipt/bill into the save_bill tool.
 
   <div class="grid g2">
     <div class="card" style="border-top:4px solid var(--model)">
-      <h3 style="margin-top:0">Phase 2 — The shape <span class="estimate">· half day</span></h3>
-      <p><b>Start on paper.</b> Table of fields with types and required/optional marks. Then code it once:</p>
+      <h3 style="margin-top:0">Phase 2 — The shape <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+      <p>Built exactly as planned, one name everywhere:</p>
       <ul class="tight">
-        <li><code>schemas/bill.py</code> — <code>BillItem(name, qty, price_minor)</code>,
-        <code>BillData(shop, date, currency, total_minor, items, notes)</code></li>
-        <li><code>models/expense.py</code> — same fields + <code>user_id</code>, <code>image_path</code>,
-        <code>created_at</code>; <code>items</code> as a JSON column <em>to start</em></li>
-        <li>Decide money &amp; dates now (see §7) — changing later is painful</li>
+        <li><code>schemas/bill.py</code> — <code>BillDraft(shop, date, currency, total_minor, items, notes)</code>,
+        <code>BillItem(name, qty, price_minor)</code>, <code>Problem(field, message)</code></li>
+        <li><code>models/expense.py</code> — same fields + <code>user_id</code>, <code>prompt_version</code>,
+        <code>created_at</code>; <code>items</code> as a JSON column, <code>date</code> as a SQL date</li>
+        <li><b>No <code>image_path</code> column</b> — the photo is never stored, so there is no path to keep</li>
       </ul>
-      <div class="checkpoint"><b>Checkpoint:</b> explain every field and its type without looking.</div>
+      <div class="checkpoint"><b>Checkpoint passed:</b> one Pydantic model, three users — Gemini, the checks, confirm.</div>
     </div>
 
     <div class="card" style="border-top:4px solid var(--router)">
-      <h3 style="margin-top:0">Phase 3 — Photo → words <span class="estimate">· half day</span></h3>
-      <p>Prove the pipe before adding structure:</p>
+      <h3 style="margin-top:0">Phase 3 — Photo → structure <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+      <p>Shipped as one route, with no plain-text describe step — the constrained call is the same pipe:</p>
       <ul class="tight">
-        <li><code>routers/bills.py</code> — <code>POST /bills/describe</code>: auth, JPG/PNG check,
-        size cap (e.g. 5&nbsp;MB), save to <code>uploads/</code>, return text</li>
-        <li><code>services/extraction.py</code> — <code>describe_bill() → str</code> (no tools yet)</li>
-        <li><code>.env</code> — <code>ANTHROPIC_API_KEY</code>, <code>ANTHROPIC_MODEL</code>; deps:
-        <code>uv add anthropic</code></li>
-        <li>Optional: resize with Pillow (worth it before Phase 6)</li>
+        <li><code>routers/bills.py</code> — <code>POST /bills/extract</code>: auth first, JPG/PNG only (415),
+        5&nbsp;MB cap (413), then the same bytes go to Gemini — no disk write</li>
+        <li><code>services/extraction.py</code> — <code>extract_bill(bytes, mime) → BillDraft</code></li>
+        <li><code>.env</code> — <code>GEMINI_API_KEY</code>, <code>GEMINI_MODEL</code>; dep:
+        <code>uv add google-genai</code></li>
+        <li>Resizing with Pillow is still the obvious next optimisation</li>
       </ul>
-      <div class="checkpoint"><b>Checkpoint:</b> plain-text description of your first real bill is correct.</div>
+      <div class="checkpoint"><b>Checkpoint:</b> request construction verified against the live API; real photos await a key (Phase 6 eval).</div>
     </div>
 
     <div class="card" style="border-top:4px solid var(--ai)">
-      <h3 style="margin-top:0">Phase 4 — Force the shape <span class="estimate">· half day</span></h3>
-      <p>Swap the body of the service, keep everything else:</p>
+      <h3 style="margin-top:0">Phase 4 — Constrain the shape <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
+      <p>Gemini's equivalent of a forced tool, one definition reused:</p>
       <ul class="tight">
-        <li>Add <code>SAVE_BILL_TOOL</code> + forced <code>tool_choice</code>; function now returns
-        <code>BillData</code></li>
-        <li>Route becomes <code>POST /bills/extract</code>, returns the draft (still <b>no DB write</b>)</li>
-        <li>Delete the “describe” path — one way to do things</li>
-        <li>Try it against: printed, handwritten, crumpled photos</li>
+        <li><code>response_mime_type="application/json"</code> + <code>response_schema=BillDraft</code>;
+        <code>response.parsed</code> is the draft</li>
+        <li>Route returns the draft and still writes <b>nothing</b> to the database</li>
+        <li>A schema/JSON failure becomes a 502 — never a half-parsed bill</li>
+        <li>Prompt lives in <code>config.py</code> with <code>PROMPT_VERSION = "v1"</code></li>
       </ul>
-      <div class="checkpoint"><b>Checkpoint:</b> every reply has exactly your fields, nothing extra.</div>
+      <div class="checkpoint"><b>Checkpoint passed:</b> nested items and nullable fields convert cleanly to Gemini's schema.</div>
     </div>
 
     <div class="card" style="border-top:4px solid var(--service)">
-      <h3 style="margin-top:0">Phase 5 — Check before save <span class="estimate">· 1 day</span></h3>
+      <h3 style="margin-top:0">Phase 5 — Check before save <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
       <p>The cashier (§5) plus the human step:</p>
       <ul class="tight">
-        <li><code>services/checks.py</code> — <code>check_bill(bill) → list[Problem]</code>, pure</li>
-        <li>Response: <code>{draft, problems[]}</code>; problems carry <code>field</code> + message</li>
-        <li><code>POST /bills/confirm</code> — accepts edited draft, <b>re-runs checks</b>, then writes
-        the row (auth: only your own bills)</li>
-        <li>Test the adversarial case: hand-edit a total to be wrong → must be flagged, never saved</li>
+        <li><code>services/checks.py</code> — <code>check_bill(draft) → list[Problem]</code>, pure, no I/O</li>
+        <li>Response: <code>{draft, problems[]}</code>; each problem carries <code>field</code> + message</li>
+        <li><code>POST /bills/confirm</code> — accepts the edited draft, <b>re-runs every check</b>, then
+        writes the row with <code>user_id</code> from the token</li>
+        <li>Adversarial case tested: hand-edit the total → 422, and the table stays empty</li>
       </ul>
-      <div class="checkpoint"><b>Checkpoint:</b> wrong total flagged, never saved silently.</div>
+      <div class="checkpoint"><b>Checkpoint passed:</b> wrong total flagged, never saved silently.</div>
     </div>
 
     <div class="card" style="border-top:4px solid var(--deps)">
-      <h3 style="margin-top:0">Phase 6 — List, demo, ship <span class="estimate">· 1 day + eval</span></h3>
-      <p>Finish the loop a user can see:</p>
+      <h3 style="margin-top:0">Phase 6 — List, demo, ship <span class="pill" style="background:var(--accent-soft);color:var(--accent);margin-left:6px">NEXT</span></h3>
+      <p>Finish the loop a user can see. Right now a saved bill exists but no route can read it back:</p>
       <ul class="tight">
         <li><code>routers/expenses.py</code> — <code>GET /expenses</code> (your rows, newest first) +
         monthly total (sum in SQL, paise → display)</li>
@@ -713,12 +719,13 @@ Extract this receipt/bill into the save_bill tool.
       deliberate, cheap upgrade.</p>
     </div>
     <div class="decision">
-      <div class="q">3 · Which currency, and which Claude model?</div>
-      <div class="rec"><b>Recommended:</b> INR (bills include Malayalam) in <code>config.py</code>;
-      a current vision-capable mid-tier model in <code>.env</code>.</div>
-      <p>Check Anthropic's docs/pricing for the current model id — they change. Put the choice in
-      <code>.env</code> so switching is one line, and note: ISO dates + explicit currency in the
-      prompt either way.</p>
+      <div class="q">3 · Which currency, and which Gemini model?</div>
+      <div class="rec"><b>Chosen:</b> INR (bills include Malayalam) in <code>config.py</code>;
+      <code>gemini-3.6-flash</code> as the default in <code>.env</code>.</div>
+      <p>Model ids change fast, so the name lives in <code>GEMINI_MODEL</code>, never in code.
+      <code>gemini-3.5-flash</code> is deprecated and now routes to 3.6 anyway; Gemini 2.5 models are
+      restricted to prior users, so a new project should not start there. Confirm your key can see
+      the model in AI Studio before the eval run. ISO dates + explicit currency in the prompt either way.</p>
     </div>
     <div class="decision">
       <div class="q">4 · Where does it go live?</div>
@@ -744,7 +751,7 @@ Extract this receipt/bill into the save_bill tool.
         <li>No LangChain or framework — the SDK is 3 calls</li>
         <li>No retries-with-backoff beyond “user clicks again”</li>
         <li>No fine-tuning, no embeddings, no vector DB</li>
-        <li>No OCR fallback if Claude fails — report and move on</li>
+        <li>No OCR fallback if Gemini fails — report and move on</li>
       </ul>
     </div>
     <div class="card"><h4 style="margin-top:0">No backend ceremony</h4>
@@ -760,7 +767,7 @@ Extract this receipt/bill into the save_bill tool.
       <ul class="tight">
         <li>No categories, budgets, charts, CSV export</li>
         <li>No sharing / teams / roles</li>
-        <li>No photo storage in S3 — <code>uploads/</code> folder</li>
+        <li>No photo storage at all — bytes are read, sent once, dropped</li>
         <li>No edit-history / audit trail</li>
         <li>No mobile app — one static HTML page</li>
       </ul>
@@ -793,7 +800,7 @@ Extract this receipt/bill into the save_bill tool.
         <tr><td><b>Cost/latency creep</b></td><td>Each retry bills again</td>
             <td>Exactly one call per upload; resize images; no automatic retries</td></tr>
         <tr><td><b>Schema churn</b></td><td>Renaming a field in 4 places</td>
-            <td>One Pydantic schema feeds tool + checks + table — change once</td></tr>
+            <td>One Pydantic schema feeds <code>response_schema</code> + checks + table — change once</td></tr>
       </tbody>
     </table>
   </div>
@@ -819,7 +826,7 @@ CARD: "9 / 10 bills extracted correctly"
     <div class="card">
       <h3 style="margin-top:0">What you'll be able to say afterwards</h3>
       <ul class="tight">
-        <li>“I built structured extraction with forced tool use — the AI fills my form, my code
+        <li>“I built structured extraction with a constrained schema — the AI fills my form, my code
         validates it.”</li>
         <li>“I can show the exact architecture — layers, one owner per state, one AI module.”</li>
         <li>“I have a live link and a measured number, plus a documented failure mode.”</li>
@@ -836,25 +843,25 @@ CARD: "9 / 10 bills extracted correctly"
 <section id="words">
   <h2>11. New words for this phase</h2>
   <div class="grid g3">
-    <div class="gl"><b>Forced tool choice</b><p>Telling the API: “your reply <em>must</em> be a call
-    to this tool.” <code>tool_choice={"type":"tool","name":"save_bill"}</code> — the guarantee behind
-    reliable structured output.</p></div>
-    <div class="gl"><b>base64</b><p>Encoding raw bytes as text so a photo can travel inside JSON.
-    Not compression — it makes files ~33% bigger.</p></div>
+    <div class="gl"><b>response_schema</b><p>Gemini's equivalent of a forced tool call: the reply
+    <em>must</em> fit this Pydantic shape. <code>response.parsed</code> hands back the object — the
+    guarantee behind reliable structured output.</p></div>
+    <div class="gl"><b>inline part</b><p><code>types.Part.from_bytes(...)</code> — image bytes inside
+    the request itself (the SDK base64-encodes them for you). One bill photo easily fits the 20&nbsp;MB cap.</p></div>
     <div class="gl"><b>Minor units</b><p>Money as integers in the smallest unit (paise). ₹12.50 →
     <code>1250</code>. Floats are banned from money.</p></div>
     <div class="gl"><b>Tolerance</b><p>Allow a tiny gap (±2 paise) before calling the maths
     wrong — rounding isn't an error. Misses beyond tolerance become a flagged field.</p></div>
     <div class="gl"><b>Untrusted input</b><p>Data you treat as user-supplied until validated —
-    Claude's reply joins this category permanently.</p></div>
+    Gemini's reply joins this category permanently — <code>check_bill()</code> is what makes that real.</p></div>
     <div class="gl"><b>Eval harness</b><p>A fixed set of inputs + expected outputs you rerun to get
     a score. Turns “I think it works” into a number.</p></div>
     <div class="gl"><b>Draft vs persisted</b><p>A draft exists only in a response; persisted means a
     database row. Only confirm crosses that line.</p></div>
     <div class="gl"><b>Prompt version</b><p>The exact instruction text used for an extraction —
     log it so score changes are explainable.</p></div>
-    <div class="gl"><b>content block</b><p>One piece of a Claude message: an image block, a text
-    block, a tool_use block. Messages are lists of these.</p></div>
+    <div class="gl"><b>content part</b><p>One piece of a Gemini request: a text <code>Part</code>, or
+    inline image bytes. <code>contents</code> is a list of these.</p></div>
   </div>
 </section>
 
@@ -862,6 +869,7 @@ CARD: "9 / 10 bills extracted correctly"
 
 <footer>
   Freebuff Desktop · Bill Reader API — Development Plan Phase 2 → Ship ·
+  Phases 2–5 shipped with Gemini · Phase 6 (list, demo, ship) next ·
   built on the Phase 1 architecture (<code>README.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>docs/AUTH.md</code>)
 </footer>
 
