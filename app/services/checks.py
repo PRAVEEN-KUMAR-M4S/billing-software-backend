@@ -43,6 +43,13 @@ def check_bill(draft: BillDraft) -> list[Problem]:
             )
         )
 
+    # 5. Every bill gets one category — Flutter filters by it, and the schema
+    #    derives the icon from it, so a missing category is the only gap left.
+    if draft.category is None:
+        problems.append(
+            Problem(field="category", message="Category is missing — pick one for this bill.")
+        )
+
     # 6. Total sanity.
     if draft.total is None:
         problems.append(Problem(field="total", message="Total is missing or unreadable."))

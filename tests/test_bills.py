@@ -20,6 +20,7 @@ def draft_payload(**overrides) -> dict:
         "shop": "Lulu Supermarket",
         "date": "2026-10-22",
         "currency": "INR",
+        "category": "groceries",
         "total": "125.00",
         "items": [
             {"name": "Rice 1kg", "qty": 2, "amount": "80.00"},
@@ -76,6 +77,7 @@ def test_extract_returns_a_clean_draft(client, auth_headers, fake_gemini):
             shop="Lulu Supermarket",
             date="2026-10-22",
             currency="INR",
+            category="groceries",
             total="125.00",
             items=[
                 BillItem(name="Rice 1kg", qty=2, amount="80.00"),
@@ -93,6 +95,10 @@ def test_extract_returns_a_clean_draft(client, auth_headers, fake_gemini):
     assert body["draft"]["total"] == "125.00"
     assert body["draft"]["items"][0]["amount"] == "80.00"
     assert body["draft"]["currency"] == "INR"
+    # A category always arrives with a drawable HugeIcons name, even though the
+    # model only answered the category.
+    assert body["draft"]["category"] == "groceries"
+    assert body["draft"]["icon"] == "strokeRoundedShoppingBasket01"
     # The photo reached the service with its real media type, and nothing else.
     assert calls == [(PNG, "image/png")]
 
@@ -102,6 +108,7 @@ def test_extract_flags_a_bad_total_but_still_returns_the_draft(client, auth_head
         BillDraft(
             shop="Lulu Supermarket",
             date="2026-10-22",
+            category="groceries",
             total="99.99",
             items=[BillItem(name="Rice 1kg", qty=2, amount="45.00")],
         )
@@ -125,6 +132,7 @@ def test_extract_returns_the_pharmacy_bill_the_way_it_is_printed(client, auth_he
         BillDraft(
             shop="VCAREOTTAPALAM MEDICALS",
             date="2026-10-21",
+            category="health",
             total="128.00",
             items=[BillItem(name="NONURD LC TAB", qty=10, amount="127.49")],
         )
@@ -147,6 +155,7 @@ def test_extract_blames_the_total_when_the_mrp_was_read_as_the_line_money(
         BillDraft(
             shop="VCAREOTTAPALAM MEDICALS",
             date="2026-10-21",
+            category="health",
             total="128.00",
             items=[BillItem(name="NONURD LC TAB", qty=10, amount="15.00")],
         )
@@ -203,6 +212,37 @@ def test_extract_reports_a_gemini_failure_as_502_without_saving(
     assert expenses() == []
 
 
+def test_extract_reports_a_busy_model_as_503_with_retry_after(
+    client, auth_headers, monkeypatch, expenses
+):
+    def busy(photo_bytes: bytes, mime_type: str):
+        raise bills_router.ExtractionError(
+            "Gemini is overloaded right now (503 UNAVAILABLE — high demand)",
+            status_code=503,
+        )
+
+    monkeypatch.setattr(bills_router, "extract_bill", busy)
+
+    response = post_photo(client, auth_headers)
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "60"
+    assert "nothing was saved" in response.json()["detail"].lower()
+    assert expenses() == []
+
+
+def test_extract_reports_spent_quota_as_429(client, auth_headers, monkeypatch, expenses):
+    def exhausted(photo_bytes: bytes, mime_type: str):
+        raise bills_router.ExtractionError("quota spent", status_code=429)
+
+    monkeypatch.setattr(bills_router, "extract_bill", exhausted)
+
+    response = post_photo(client, auth_headers)
+
+    assert response.status_code == 429
+    assert expenses() == []
+
+
 def test_confirm_refuses_a_wrong_total(client, auth_headers, expenses):
     response = client.post(
         "/bills/confirm",
@@ -232,12 +272,16 @@ def test_confirm_saves_the_row_for_the_logged_in_user(client, auth_headers, expe
     body = response.json()
     assert body["total"] == "125.00"  # rupees on the way out, exact
     assert body["date"] == "2026-10-22"
+    assert body["category"] == "groceries"
+    assert body["icon"] == "strokeRoundedShoppingBasket01"
     assert body["items"][1]["name"] == "Milk"
 
     rows = expenses()
     assert len(rows) == 1
     # Paise in SQLite: no floating-point money in the database.
     assert rows[0]["total_minor"] == 12_500
+    assert rows[0]["category"] == "groceries"
+    assert rows[0]["icon"] == "strokeRoundedShoppingBasket01"
     assert rows[0]["date"] == "2026-10-22"
     assert rows[0]["prompt_version"]  # every saved bill records the prompt that made it
     assert json.loads(rows[0]["items"])[0]["amount"] == "80.00"
@@ -245,6 +289,18 @@ def test_confirm_saves_the_row_for_the_logged_in_user(client, auth_headers, expe
     # Two users, two accounts: the row belongs to the token that confirmed it.
     me = client.get("/auth/me", headers=auth_headers).json()
     assert rows[0]["user_id"] == me["id"]
+
+
+def test_confirm_refuses_a_draft_without_a_category(client, auth_headers, expenses):
+    response = client.post(
+        "/bills/confirm",
+        headers=auth_headers,
+        json={"draft": draft_payload(category=None)},
+    )
+
+    assert response.status_code == 422
+    assert [p["field"] for p in response.json()["detail"]["problems"]] == ["category"]
+    assert expenses() == []
 
 
 def test_confirm_requires_a_token(client):

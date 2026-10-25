@@ -221,7 +221,7 @@
         ├── <span style="color:var(--model)">user.py</span>          <span class="cmt"># users: id, email, hashed_password, created_at</span>
         └── <span style="color:var(--model)">expense.py</span>       <span class="cmt"># confirmed bills: total_minor (paise), date, items (JSON)</span>
 
-tests/                     <span class="cmt"># pytest — 38 tests around checks, routes, extraction</span></pre>
+tests/                     <span class="cmt"># pytest — 52 tests around checks, routes, extraction, schema upgrades</span></pre>
 
     <div class="legend" aria-label="Color legend">
       <span class="pill p-router">routers/ = URL &amp; HTTP</span>
@@ -363,7 +363,7 @@ tests/                     <span class="cmt"># pytest — 38 tests around checks
         <li><div class="where"><span class="pill p-service">services/extraction.py</span></div><p>One Gemini call: the photo goes in as <code>types.Part.from_bytes(...)</code>, the shape in as <code>response_schema=BillDraft</code>. The blocking SDK call runs in a thread so the event loop stays free.</p></li>
         <li><div class="where"><span class="pill p-ai" style="background:var(--ai-bg);color:var(--ai)">Gemini</span></div><p>Constrained JSON comes back; <code>response.parsed</code> is already a <code>BillDraft</code>. Pydantic rejected anything that doesn't fit — no prose to parse.</p></li>
         <li><div class="where"><span class="pill p-service">services/checks.py</span></div><p><code>check_bill(draft)</code> treats that reply as <em>untrusted</em>: maths, ISO date, currency, sane bounds.</p></li>
-        <li class="fail"><div class="where">branch</div><p>Gemini down, key wrong, model missing → <b>502</b>, nothing saved. The photo bytes are dropped here; nothing was written to disk.</p></li>
+        <li class="fail"><div class="where">branch</div><p>Model busy (<b>503</b>, next model tried once), quota spent (<b>429</b>), key wrong or model missing (<b>502</b>) — nothing saved, and the message says which. The photo bytes are dropped here; nothing was written to disk.</p></li>
         <li class="final"><div class="where">response</div><p><b>200</b> <code>{"draft": {…}, "problems": []}</code> — a draft that exists only in this response. <code>POST /bills/confirm</code> re-checks the edited draft and only then inserts the row (<b>201</b>, or <b>422</b> with the fields to fix).</p></li>
       </ol>
     </div>
@@ -436,14 +436,14 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/auth/register</code></td><td><code>{email, password}</code></td><td>201 <code>{id, email}</code></td><td>409 duplicate · 422 bad input</td></tr>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/auth/login</code></td><td><code>{email, password}</code></td><td>200 <code>{access_token}</code></td><td>401 wrong creds · 422 bad input</td></tr>
         <tr><td><span class="pill p-router">GET</span></td><td><code>/auth/me</code></td><td>— (Bearer token)</td><td>200 <code>{id, email}</code></td><td>401 missing/invalid/deleted</td></tr>
-        <tr><td><span class="pill p-router">POST</span></td><td><code>/bills/extract</code></td><td>multipart <code>file</code> (JPG/PNG ≤ 5&nbsp;MB)</td><td>200 <code>{draft, problems[]}</code> — writes nothing</td><td>401 · 415 wrong type · 413 too big · 502 Gemini failed</td></tr>
+        <tr><td><span class="pill p-router">POST</span></td><td><code>/bills/extract</code></td><td>multipart <code>file</code> (JPG/PNG ≤ 5&nbsp;MB)</td><td>200 <code>{draft, problems[]}</code> — writes nothing</td><td>401 · 415 wrong type · 413 too big · 503 model busy (Retry-After) · 429 quota · 502 other</td></tr>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/bills/confirm</code></td><td><code>{draft}</code> (the edited draft)</td><td>201 saved bill</td><td>401 · 422 <code>problems[]{field, message}</code></td></tr>
       </tbody>
     </table>
   </div>
   <p style="margin-top:14px;font-size:14.5px;color:var(--muted)">Interactive playground: <a href="http://127.0.0.1:8000/docs" target="_blank" rel="noopener">127.0.0.1:8000/docs</a> —
   every row above is clickable and runnable. Auth behaviours were verified against a live server; the bill routes are
-  covered by <code>uv run pytest</code> (38 tests): 401, 415, 413, a flagged wrong total, a 422 on confirm, and the
+  covered by <code>uv run pytest</code> (52 tests): 401, 415, 413, a flagged wrong total, a 422 on confirm, and the
   saved row read back from SQLite.</p>
 </section>
 
@@ -464,6 +464,7 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
         <tr><td>The bill shape</td><td><code>schemas/bill.py</code></td><td>the same schema Gemini fills, the checks judge, and confirm accepts</td></tr>
         <tr><td>Extraction result</td><td>nobody, until confirm</td><td>a draft lives only in the HTTP response — the database cannot hold an unreviewed bill</td></tr>
         <tr><td>Money</td><td>one shape, one conversion</td><td>the API speaks rupees as two-place decimals (<code>"128.00"</code>); SQLite keeps exact integer paise in <code>total_minor</code>; only <code>/bills/confirm</code> converts, so floats never enter</td></tr>
+        <tr><td>Category + icon vocabulary</td><td><code>config.py</code></td><td>one <code>EXPENSE_CATEGORIES</code> map feeds the prompt, both schema enums and Flutter; a default icon per category means an icon is never invented</td></tr>
         <tr><td>Uploaded photo</td><td>nobody</td><td>read into memory, sent once, dropped — bills are personal data</td></tr>
       </tbody>
     </table>
@@ -478,7 +479,7 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 1 · Authentication <span class="tag-done">— DONE</span></b>
         <span>register / login / me, bcrypt, JWT, get_current_user. Verified end-to-end.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 2 · The bill shape <span class="tag-done">— DONE</span></b>
-        <span><code>schemas/bill.py</code> (<code>BillDraft</code>, <code>BillItem</code>, <code>Problem</code>) and <code>models/expense.py</code>. Money as rupees in <code>Decimal</code> (<code>total</code>, <code>round_off</code>, <code>items[].amount</code>), dates ISO, items as JSON.</span></div></li>
+        <span><code>schemas/bill.py</code> (<code>BillDraft</code>, <code>BillItem</code>, <code>Problem</code>) and <code>models/expense.py</code>. Money as rupees in <code>Decimal</code> (<code>total</code>, <code>round_off</code>, <code>items[].amount</code>), <code>category</code> + <code>icon</code> as enums (<code>strokeRoundedHome01</code>), dates ISO, items as JSON.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 3–4 · Photo → structured draft <span class="tag-done">— DONE</span></b>
         <span><code>POST /bills/extract</code> → <code>services/extraction.py</code> → one Gemini call with <code>response_schema=BillDraft</code>. No plain-text describe step; we went straight to the constrained shape.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 5 · Check before you save <span class="tag-done">— DONE</span></b>

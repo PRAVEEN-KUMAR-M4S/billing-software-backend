@@ -21,6 +21,17 @@ REFRESH_TOKEN_EXPIRE_DAYS = 30
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Never hardcode a model name in code — model ids change. Override in .env.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+# A model can be busy ("503 UNAVAILABLE — high demand") without any quota being
+# involved, and another key in the same project shares both the quota and the
+# overload. A different model is what has capacity, so each is tried once.
+# Comma-separated; the primary above is always tried first.
+GEMINI_FALLBACK_MODELS = [
+    model.strip()
+    for model in os.getenv(
+        "GEMINI_FALLBACK_MODELS", "gemini-3.8-flash,gemini-3.5-flash-lite"
+    ).split(",")
+    if model.strip()
+]
 
 # One upload, one call. 5 MB is plenty for a phone photo of a bill.
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
@@ -36,10 +47,73 @@ TOTAL_TOLERANCE = Decimal("0.02")
 # nearest rupee (127.49 paid as 128.00). One rupee is the most that can hide.
 CASHIER_ROUNDING = Decimal("1.00")
 
+# --- Categories and icons --------------------------------------------------
+# Every saved bill gets one category (Flutter filters by it) and one icon name.
+# The names are exact member names from hugeicons 1.2.0:
+# `HugeIcons.strokeRoundedHome01`. The first icon in each list is that
+# category's default, used when the model's pick is missing or belongs to
+# another category — an icon is never invented, because Flutter has to draw it.
+EXPENSE_CATEGORIES: dict[str, tuple[str, ...]] = {
+    "groceries": (
+        "strokeRoundedShoppingBasket01",
+        "strokeRoundedShoppingBasket02",
+        "strokeRoundedShoppingCart01",
+    ),
+    "dining": (
+        "strokeRoundedRestaurant01",
+        "strokeRoundedCoffee01",
+        "strokeRoundedHamburger01",
+    ),
+    "transport": (
+        "strokeRoundedBus01",
+        "strokeRoundedCar01",
+        "strokeRoundedBike",
+    ),
+    "health": (
+        "strokeRoundedMedicine01",
+        "strokeRoundedHospital01",
+        "strokeRoundedPill",
+    ),
+    "utilities": (
+        "strokeRoundedFlash",
+        "strokeRoundedInvoice01",
+        "strokeRoundedPlug01",
+    ),
+    "shopping": (
+        "strokeRoundedShoppingBag01",
+        "strokeRoundedTShirt",
+        "strokeRoundedShoes",
+    ),
+    "rent": (
+        "strokeRoundedHome01",
+        "strokeRoundedBuilding01",
+        "strokeRoundedKey01",
+    ),
+    "entertainment": (
+        "strokeRoundedFilm01",
+        "strokeRoundedMusicNote01",
+        "strokeRoundedGameController01",
+    ),
+    "education": (
+        "strokeRoundedBook01",
+        "strokeRoundedGraduationCap",
+        "strokeRoundedPencil",
+    ),
+    "other": (
+        "strokeRoundedHelpCircle",
+        "strokeRoundedTag01",
+        "strokeRoundedWallet01",
+    ),
+}
+
+_CATEGORY_HELP = "\n".join(
+    f"- {category}: {', '.join(icons)}" for category, icons in EXPENSE_CATEGORIES.items()
+)
+
 # The prompt is versioned so an extraction can be traced back to the text
 # that produced it (the v1 score only means something against v1).
-PROMPT_VERSION = "v4"
-EXTRACTION_PROMPT = """
+PROMPT_VERSION = "v5"
+EXTRACTION_PROMPT = f"""
 Extract this receipt or bill into the provided schema.
 
 - shop: the business name printed on the bill.
@@ -76,4 +150,16 @@ Which printed number is the money (most mistakes happen here):
 - If a value is unreadable, blurry or missing, set it to null and explain why
   in notes.
 - Never guess: an honest null is better than a wrong number.
+
+Category and icon (required — the app draws the icon):
+- category: exactly one name from the list below, spelled exactly like this
+  (lowercase, no spaces). It describes the whole bill, not one line: a pharmacy
+  bill is health even when it also sells soap. Use "other" only when nothing
+  else fits.
+- icon: exactly one icon name from that category's list, copied character for
+  character including the "strokeRounded" prefix — for example
+  strokeRoundedHome01. Never invent, shorten, translate or pluralise a name.
+  Pick the one that best matches what was bought.
+
+{_CATEGORY_HELP}
 """.strip()

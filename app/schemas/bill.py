@@ -16,11 +16,18 @@ only, so the API has one money unit and the storage has one exact one.
 
 from datetime import date as date_type
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, PlainSerializer, WithJsonSchema, field_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    PlainSerializer,
+    WithJsonSchema,
+    field_validator,
+    model_validator,
+)
 
-from app.config import DEFAULT_CURRENCY
+from app.config import DEFAULT_CURRENCY, EXPENSE_CATEGORIES
 
 _TWO_PLACES = Decimal("0.01")
 _SYMBOLS = ("₹", "$", "£", "€", ",", "\u00a0")
@@ -67,6 +74,13 @@ def parse_money(raw: object) -> Decimal | None:
 def format_money(amount: Decimal | None) -> str | None:
     """128 -> '128.00', for JSON and for messages a human reads."""
     return None if amount is None else f"{amount:.2f}"
+
+
+# One category from the fixed list, and one HugeIcons name from that category.
+# Both are enums, so Gemini cannot answer with a category the app does not know
+# or an icon name Flutter cannot draw.
+Category = Literal[tuple(EXPENSE_CATEGORIES)]
+Icon = Literal[tuple(icon for icons in EXPENSE_CATEGORIES.values() for icon in icons)]
 
 
 # One money field: rupees in, two-place Decimal inside, "128.00" out.
@@ -122,6 +136,20 @@ class BillDraft(BaseModel):
     shop: str | None = Field(default=None, description="Business name on the bill.")
     date: str | None = Field(default=None, description="ISO date, YYYY-MM-DD.")
     currency: str = Field(default=DEFAULT_CURRENCY, description="ISO 4217 code.")
+    category: Category | None = Field(
+        default=None,
+        description=(
+            "One category for the whole bill (e.g. groceries, health, transport), "
+            "from the schema's enum. Required."
+        ),
+    )
+    icon: Icon | None = Field(
+        default=None,
+        description=(
+            "One HugeIcons 1.2.0 stroke-rounded member name from the schema's enum, "
+            "e.g. strokeRoundedHome01, chosen from the category's own icons."
+        ),
+    )
     total: Money | None = Field(
         default=None,
         description="The printed bill total / net payable, in rupees with two decimal places.",
@@ -140,6 +168,18 @@ class BillDraft(BaseModel):
     @classmethod
     def _money_fields(cls, value: object) -> Decimal | None:
         return parse_money(value)
+
+    @model_validator(mode="after")
+    def _icon_belongs_to_category(self) -> "BillDraft":
+        """Always leave with a drawable icon.
+
+        The model's pick is kept when it is one of that category's icons;
+        otherwise the category's default is used. Nothing is invented, so the
+        Flutter side always has a real `HugeIcons.<name>` to render.
+        """
+        if self.category is not None and self.icon not in EXPENSE_CATEGORIES[self.category]:
+            self.icon = EXPENSE_CATEGORIES[self.category][0]
+        return self
     notes: str | None = Field(
         default=None, description="Why a field is null, or anything odd on the bill."
     )
@@ -173,6 +213,8 @@ class ExpenseOut(BaseModel):
     date: date_type  # serialises to ISO in JSON
     currency: str
     total: Money
+    category: Category
+    icon: Icon
     items: list[BillItem]
     notes: str | None = None
 

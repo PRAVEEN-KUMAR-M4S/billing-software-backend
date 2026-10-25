@@ -211,8 +211,10 @@
         <h3>Design the shape <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
         <p>One Pydantic schema — <code>shop</code>, <code>date</code>, <code>total</code>,
         <code>round_off</code>, <code>currency</code>, <code>items[]</code>
-        (name, qty, amount), <code>notes</code> — copied
-        into one table. Money as rupees with two decimals, dates as ISO.</p>
+        (name, qty, amount), <code>category</code>, <code>icon</code>,
+        <code>notes</code> — copied
+        into one table. Money as rupees with two decimals, category and icon as
+        fixed vocabularies, dates as ISO.</p>
         <div class="checkpoint"><b>Checkpoint passed:</b> every field in <code>schemas/bill.py</code> is the one
         the model fills, the checks judge, and the table stores.</div>
       </div>
@@ -244,7 +246,7 @@
         <h3>Check before you save <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
         <p><code>check_bill()</code> — maths (line amounts + printed round-off ≈ total; ±0.02 with a
         round-off, ₹1.00 of cashier rounding without one), ISO date parse, currency,
-        “unreadable” and bounds. <code>POST /bills/confirm</code> re-runs it on the edited draft, then
+        a required category, “unreadable” and bounds. <code>POST /bills/confirm</code> re-runs it on the edited draft, then
         writes the row.</p>
         <div class="checkpoint"><b>Checkpoint passed:</b> a hand-edited wrong total gets 422 and the row count stays zero.</div>
       </div>
@@ -292,7 +294,7 @@
     ├── user.py          # unchanged
     └── expense.py       <span style="color:#087f5b">✅ expenses table (paise in SQLite, ISO date)</span>
 
-tests/                   <span style="color:#087f5b">✅ 38 pytest tests: checks, routes, extraction</span>
+tests/                   <span style="color:#087f5b">✅ 52 pytest tests: checks, routes, extraction, schema upgrades</span>
 app/static/index.html    <span style="color:#8a93a8">P6 · tiny page: upload + list + demo</span>
 samples/                 <span style="color:#8a93a8">P6 · 5 demo photos</span>
 <span style="color:#8a93a8"># uploads/ — deliberately absent: photos are never stored</span>
@@ -317,6 +319,7 @@ evals/                   <span style="color:#8a93a8">optional · 10 bills + scor
           <tr><td class="pill p-new">Extraction result</td><td><em>Nobody</em>, until the user confirms —
               drafts live only in the HTTP response (deliberate)</td></tr>
           <tr><td class="pill p-new">Money</td><td>rupees as <code>Decimal</code> in the API; exact paise in SQLite (<code>total_minor</code>); one conversion in confirm</td></tr>
+          <tr><td class="pill p-new">Category + icon vocabulary</td><td><code>config.py</code> → both schema enums; the default icon per category means the API never returns a name Flutter cannot draw</td></tr>
         </tbody>
       </table>
       </div>
@@ -512,13 +515,13 @@ def extract_bill(photo_bytes: bytes, mime_type: str) -> BillDraft:
     <p style="font-size:13.5px;color:var(--muted);margin:4px 0 0">Parameter names drift between
     SDK versions — this is <code>google-genai 2.32</code>. A JSON fallback
     (<code>BillDraft.model_validate_json(response.text)</code>) covers a reply that arrived as text,
-    and every failure becomes a 502 instead of a half-parsed bill.</p>
+    and every failure becomes a status you can act on — 503 model busy (`Retry-After`), 429 quota, 502 otherwise — never a half-parsed bill. A busy model falls over once to the next id in <code>GEMINI_FALLBACK_MODELS</code>.</p>
   </div>
 
   <h3>Step D — The prompt: short, fixed, versioned</h3>
   <div class="card">
     <pre><code># config.py — one system instruction, written once, versioned
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 EXTRACTION_PROMPT = """
 Extract this receipt or bill into the provided schema.
 - date: ISO YYYY-MM-DD; never guess DD/MM vs MM/DD, null if ambiguous
@@ -529,14 +532,21 @@ Extract this receipt or bill into the provided schema.
   never the amount, and qty never multiplies money
 - round_off: only a printed Round Off line, signed; null if the bill prints
   none. Never adjust amounts to force them to equal the total
+- category: exactly one of groceries / dining / transport / health /
+  utilities / shopping / rent / entertainment / education / other
+- icon: exactly one name from that category's list, prefix included
+  (strokeRoundedHome01). Never invent or shorten a name
 - if a value is unreadable, set it to null and explain why in notes
 - never guess: an honest null beats a wrong number
 """</code></pre>
     <ul class="tight">
       <li>It lives in <code>config.py</code> — <b>one owner</b>, sent as
       <code>system_instruction</code> on every call.</li>
-      <li><code>PROMPT_VERSION = "v4"</code> is stored in an <code>expenses.prompt_version</code> column,
+      <li><code>PROMPT_VERSION = "v5"</code> is stored in an <code>expenses.prompt_version</code> column,
       so when the score changes you know which prompt produced which row.</li>
+      <li>The category/icon lists live once in <code>config.py</code>
+      (<code>EXPENSE_CATEGORIES</code>) and become the schema's enums, so the prompt,
+      the API and what Flutter can draw cannot drift apart.</li>
       <li>No “reply in JSON” in the prompt — the schema does that job. Asking in prose is the fragile
       version of a guarantee the API already gives you.</li>
     </ul>
@@ -553,7 +563,7 @@ Extract this receipt or bill into the provided schema.
             by pixels, so smaller = cheaper. <em>(Check the pricing page — it changes.)</em></td>
             <td>Resize photos; one call per upload; no retry loops.</td></tr>
         <tr><td><b>Failure</b></td><td>API down, timeout, a reply that fails the schema.</td>
-            <td>Map to a friendly <b>502</b>; nothing was saved, try again. Pydantic catches bad input.</td></tr>
+            <td>Busy model → <b>503</b> + <code>Retry-After</code> (the next model is tried once first); spent quota → <b>429</b> (wait for the reset); anything else → <b>502</b>. Nothing was saved either way.</td></tr>
         <tr><td><b>Rate</b></td><td>You're a demo, not Stripe.</td>
             <td>No rate limiting yet (see “Won't build”).</td></tr>
       </tbody>
@@ -626,10 +636,12 @@ Extract this receipt or bill into the provided schema.
       <h3 style="margin-top:0">Phase 2 — The shape <span class="pill p-service" style="margin-left:6px">DONE</span></h3>
       <p>Built exactly as planned, one name everywhere:</p>
       <ul class="tight">
-        <li><code>schemas/bill.py</code> — <code>BillDraft(shop, date, currency, total,
-        round_off, items, notes)</code>, <code>BillItem(name, qty, amount)</code>,
+        <li><code>schemas/bill.py</code> — <code>BillDraft(shop, date, currency, category,
+        icon, total, round_off, items, notes)</code>, <code>BillItem(name, qty, amount)</code>,
         <code>Problem(field, message)</code>; money is <code>Decimal</code> rupees, serialised as
-        <code>"128.00"</code></li>
+        <code>"128.00"</code>; <code>category</code> and <code>icon</code> are enums built from
+        <code>EXPENSE_CATEGORIES</code> in <code>config.py</code>, so the model can only return a
+        real <code>HugeIcons.strokeRounded…</code> member</li>
         <li><code>models/expense.py</code> — same fields + <code>user_id</code>, <code>prompt_version</code>,
         <code>created_at</code>; <code>items</code> as a JSON column, <code>date</code> as a SQL date</li>
         <li><b>No <code>image_path</code> column</b> — the photo is never stored, so there is no path to keep</li>
@@ -659,7 +671,7 @@ Extract this receipt or bill into the provided schema.
         <code>response.parsed</code> is the draft</li>
         <li>Route returns the draft and still writes <b>nothing</b> to the database</li>
         <li>A schema/JSON failure becomes a 502 — never a half-parsed bill</li>
-        <li>Prompt lives in <code>config.py</code> with <code>PROMPT_VERSION = "v4"</code></li>
+        <li>Prompt lives in <code>config.py</code> with <code>PROMPT_VERSION = "v5"</code></li>
       </ul>
       <div class="checkpoint"><b>Checkpoint passed:</b> nested items and nullable fields convert cleanly to Gemini's schema.</div>
     </div>
@@ -806,7 +818,7 @@ Extract this receipt or bill into the provided schema.
             <td>Prompt says null + reason beats guessing; nulls route to fix form</td></tr>
         <tr><td><b>Malayalam / handwritten</b></td><td>Shop or item names garbled</td>
             <td>Expected — it's in your 10-bill test set; count it honestly in the score</td></tr>
-        <tr><td><b>API down mid-demo</b></td><td>502s on stage</td>
+        <tr><td><b>API down mid-demo</b></td><td>503 overload or 502s on stage</td>
             <td>Nothing saved, friendly message; demo bills can be pre-run once</td></tr>
         <tr><td><b>Cost/latency creep</b></td><td>Each retry bills again</td>
             <td>Exactly one call per upload; resize images; no automatic retries</td></tr>

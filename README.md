@@ -14,7 +14,7 @@ validated draft via Gemini, and only a human-confirmed draft reaches the databas
 uv sync                  # install dependencies (once)
 cp .env.example .env     # then set SECRET_KEY and GEMINI_API_KEY
 uv run main.py           # start the server on http://127.0.0.1:8000
-uv run pytest            # 38 tests: checks, routes, the AI module
+uv run pytest            # 52 tests: checks, routes, the AI module, the schema upgrade
 ```
 
 - Interactive API docs: http://127.0.0.1:8000/docs
@@ -140,9 +140,23 @@ photo ──► POST /bills/extract ──► services/extraction.py ──► G
 - **Rounding.** A stated round-off has to close the maths to the paise (±0.02).
   With none printed, up to ₹1.00 of cashier rounding (127.49 paid as 128.00)
   is accepted rather than blocked.
+- **Every bill is classified and gets a drawable icon.** `category` is one of
+  ten fixed slugs (`groceries`, `dining`, `transport`, `health`, `utilities`,
+  `shopping`, `rent`, `entertainment`, `education`, `other`); `icon` is an exact
+  hugeicons 1.2.0 member name such as `strokeRoundedHome01`. Both are enums in
+  `response_schema`, so the model cannot invent a category or an icon name
+  Flutter does not have. If its icon pick is missing or belongs to another
+  category, that category's default (e.g. `strokeRoundedShoppingBasket01` for
+  groceries) is used instead — never an invented name.
 - **The database is the last stop.** `/extract` writes nothing; `/confirm`
   re-runs every check on the *edited* draft, so a hand-edited wrong total is
   rejected with 422 instead of saved.
+- **A busy model falls over to another model.** `503 UNAVAILABLE — high demand`
+  is the model's capacity, not your key: every key in the same project hits it,
+  so the next id in `GEMINI_FALLBACK_MODELS` is tried once instead. Spent quota
+  (429) is *not* retried — the route answers `503` + `Retry-After: 60` for a
+  busy model and `429` for quota, so you can tell "wait a minute" from "wait
+  until midnight Pacific".
 - **The photo is not stored.** It is read into memory, sent once, and dropped.
   Bills are personal data; whether your Gemini key's tier allows Google to use
   requests for training is a decision for you to check in AI Studio.
@@ -158,7 +172,7 @@ curl -X POST http://127.0.0.1:8000/bills/extract \
 # save it (after fixing anything in problems[])
 curl -X POST http://127.0.0.1:8000/bills/confirm \
   -H "Authorization: Bearer <access token>" -H 'Content-Type: application/json' \
-  -d '{"draft":{"shop":"Lulu","date":"2026-10-22","currency":"INR","total":"125.00","round_off":null,"items":[{"name":"Rice 1kg","qty":2,"amount":"80.00"},{"name":"Milk","qty":1,"amount":"45.00"}]}}'
+  -d '{"draft":{"shop":"Lulu","date":"2026-10-22","currency":"INR","category":"groceries","icon":"strokeRoundedShoppingBasket01","total":"125.00","round_off":null,"items":[{"name":"Rice 1kg","qty":2,"amount":"80.00"},{"name":"Milk","qty":1,"amount":"45.00"}]}}'
 ```
 
 ## Roadmap

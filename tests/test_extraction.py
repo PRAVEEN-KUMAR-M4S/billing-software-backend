@@ -7,6 +7,7 @@ SDK would hand back.
 from types import SimpleNamespace
 
 import pytest
+from google.genai import errors
 
 from app.schemas.bill import BillDraft, BillItem
 from app.services import extraction
@@ -15,26 +16,31 @@ DRAFT = BillDraft(
     shop="Lulu Supermarket",
     date="2026-10-22",
     currency="INR",
+    category="groceries",
     total="45.00",
     items=[BillItem(name="Rice 1kg", qty=2, amount="45.00")],
 )
 
 
 class FakeModels:
-    def __init__(self, response):
-        self.response = response
+    """Replay one reply per call; a list lets a test script a model fallback."""
+
+    def __init__(self, responses):
+        self.responses = responses if isinstance(responses, list) else [responses]
         self.calls = []
 
     def generate_content(self, **kwargs):
         self.calls.append(kwargs)
-        if isinstance(self.response, Exception):
-            raise self.response
-        return self.response
+        index = min(len(self.calls) - 1, len(self.responses) - 1)
+        response = self.responses[index]
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class FakeClient:
-    def __init__(self, response):
-        self.models = FakeModels(response)
+    def __init__(self, responses):
+        self.models = FakeModels(responses)
 
 
 @pytest.fixture()
@@ -78,6 +84,18 @@ def test_prompt_asks_for_rupees_not_paise(stub):
     assert "Rs 127.49 is 127.49 (not 12749)" in prompt
 
 
+def test_prompt_carries_the_category_and_icon_vocabulary(stub):
+    client = stub(SimpleNamespace(parsed=DRAFT, text=None))
+    extraction.extract_bill(b"photo-bytes", "image/png")
+
+    prompt = client.models.calls[0]["config"].system_instruction
+    assert "category" in prompt
+    assert "groceries" in prompt
+    # Exact hugeicons 1.2.0 member names, or Flutter has nothing to draw.
+    assert "strokeRoundedShoppingBasket01" in prompt
+    assert "strokeRoundedHome01" in prompt
+
+
 def test_extract_falls_back_to_json_text_when_nothing_was_parsed(stub):
     # A real reply carries money as the JSON string "45.00" (not a float).
     text = DRAFT.model_dump_json()
@@ -87,10 +105,61 @@ def test_extract_falls_back_to_json_text_when_nothing_was_parsed(stub):
 
 
 def test_extract_wraps_api_failures(stub):
-    stub(RuntimeError("503 Service Unavailable"))
+    stub(RuntimeError("400 INVALID_ARGUMENT"))
     with pytest.raises(extraction.ExtractionError) as caught:
         extraction.extract_bill(b"photo-bytes", "image/jpeg")
-    assert "503" in str(caught.value)
+    assert "400" in str(caught.value)
+    assert caught.value.status_code == 502
+
+
+def busy_error():
+    return errors.ServerError(
+        503,
+        {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}},
+    )
+
+
+def quota_error():
+    return errors.ClientError(
+        429,
+        {"error": {"code": 429, "message": "quota", "status": "RESOURCE_EXHAUSTED"}},
+    )
+
+
+def test_a_busy_model_falls_over_to_the_next_model(stub, monkeypatch):
+    """503 is the model's capacity, so another model can succeed where a key can't."""
+    monkeypatch.setattr(extraction, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
+    client = stub([busy_error(), SimpleNamespace(parsed=DRAFT, text=None)])
+
+    assert extraction.extract_bill(b"photo-bytes", "image/png") == DRAFT
+    assert [call["model"] for call in client.models.calls] == [
+        extraction.GEMINI_MODEL,
+        "fallback-model",
+    ]
+
+
+def test_every_model_busy_is_a_503_that_names_them(stub, monkeypatch):
+    monkeypatch.setattr(extraction, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
+    stub([busy_error(), busy_error()])
+
+    with pytest.raises(extraction.ExtractionError) as caught:
+        extraction.extract_bill(b"photo-bytes", "image/png")
+
+    assert caught.value.status_code == 503
+    assert extraction.GEMINI_MODEL in str(caught.value)
+    assert "fallback-model" in str(caught.value)
+
+
+def test_spent_quota_is_not_spent_again_on_another_model(stub, monkeypatch):
+    monkeypatch.setattr(extraction, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
+    client = stub(quota_error())
+
+    with pytest.raises(extraction.ExtractionError) as caught:
+        extraction.extract_bill(b"photo-bytes", "image/png")
+
+    assert caught.value.status_code == 429
+    assert len(client.models.calls) == 1  # quota is per project: fallback would only burn another bucket
+    assert "midnight Pacific" in str(caught.value)
 
 
 def test_extract_rejects_a_reply_that_is_not_a_bill(stub):

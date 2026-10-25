@@ -2,6 +2,9 @@
 
 from decimal import Decimal
 
+import pytest
+from pydantic import ValidationError
+
 from app.schemas.bill import BillDraft, BillItem, parse_money
 from app.services.checks import check_bill
 
@@ -11,6 +14,7 @@ def good_draft(**overrides) -> BillDraft:
         "shop": "Lulu Supermarket",
         "date": "2026-10-22",
         "currency": "INR",
+        "category": "groceries",
         "total": "125.00",
         "items": [
             BillItem(name="Rice 1kg", qty=2, amount="80.00"),
@@ -71,6 +75,35 @@ def test_ambiguous_date_is_rejected():
 def test_foreign_currency_is_flagged():
     assert fields(check_bill(good_draft(currency="USD"))) == {"currency"}
     assert check_bill(good_draft(currency="inr")) == []
+
+
+def test_a_bill_without_a_category_is_flagged():
+    assert fields(check_bill(good_draft(category=None))) == {"category"}
+
+
+def test_the_category_supplies_an_icon_when_the_model_picks_none():
+    assert good_draft(category="health").icon == "strokeRoundedMedicine01"
+
+
+def test_an_icon_from_another_category_falls_back_to_this_categorys_own():
+    draft = good_draft(category="health", icon="strokeRoundedHome01")
+    assert draft.icon == "strokeRoundedMedicine01"
+
+
+def test_an_icon_from_the_same_category_is_kept():
+    draft = good_draft(category="health", icon="strokeRoundedHospital01")
+    assert draft.icon == "strokeRoundedHospital01"
+
+
+def test_an_icon_that_does_not_exist_in_hugeicons_is_rejected_by_the_schema():
+    # The enum is the guarantee: Flutter can always draw what the model returns.
+    with pytest.raises(ValidationError):
+        good_draft(icon="strokeRoundedMadeUpIcon")
+
+
+def test_a_category_outside_the_list_is_rejected_by_the_schema():
+    with pytest.raises(ValidationError):
+        good_draft(category="medicine")
 
 
 def test_unreadable_fields_are_listed_one_by_one():

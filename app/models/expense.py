@@ -30,6 +30,10 @@ class Expense(Base):
     date: Mapped[date_type] = mapped_column(Date)
     currency: Mapped[str] = mapped_column(String(3))
     total_minor: Mapped[int] = mapped_column(Integer)
+    # Nullable in storage only: the API requires both (checks refuse a draft
+    # without a category), and old rows from before this field existed are NULL.
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    icon: Mapped[str | None] = mapped_column(String(64), nullable=True)
     items: Mapped[list[dict]] = mapped_column(JSON)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Which prompt text produced the draft this row came from.
