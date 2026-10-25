@@ -81,7 +81,7 @@ This is the pattern every future protected route reuses — including
 | `app/schemas/bill.py`  | What is a bill, exactly?               | one shape: Gemini, checks, confirm |
 | `app/services/extraction.py` | How do we read a photo?          | the only Gemini call |
 | `app/services/checks.py` | Is this draft trustworthy?           | pure functions, no I/O |
-| `app/models/expense.py` | What is a saved bill?                 | integer paise, ISO date |
+| `app/models/expense.py` | What is a saved bill?                 | paise in SQLite, rupees out, ISO date |
 
 ## 4. State: who owns what
 

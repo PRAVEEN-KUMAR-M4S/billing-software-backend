@@ -14,7 +14,7 @@ validated draft via Gemini, and only a human-confirmed draft reaches the databas
 uv sync                  # install dependencies (once)
 cp .env.example .env     # then set SECRET_KEY and GEMINI_API_KEY
 uv run main.py           # start the server on http://127.0.0.1:8000
-uv run pytest            # 23 tests: checks, routes, the AI module
+uv run pytest            # 38 tests: checks, routes, the AI module
 ```
 
 - Interactive API docs: http://127.0.0.1:8000/docs
@@ -42,7 +42,7 @@ app/
 └── models/          # LAYER 4 — the storage: tables and columns
     ├── user.py
     ├── refresh_token.py
-    └── expense.py   # confirmed bills only (integer paise, ISO date)
+    └── expense.py   # confirmed bills only (paise in SQLite, ISO date)
 
 tests/               # pytest: checks, routes, extraction wiring
 ```
@@ -121,10 +121,25 @@ photo ──► POST /bills/extract ──► services/extraction.py ──► G
   plus `response_schema=BillDraft` constrains Gemini to exactly our fields, and
   `.parsed` hands back a Pydantic object. Gemini has no Claude-style forced tool
   call; this is its equivalent.
-- **The reply is untrusted input.** Maths (`Σ qty × price ≈ total`, ±2 paise),
-  ISO dates, allowed currency and non-empty fields are re-checked in
+- **The reply is untrusted input.** Maths (`Σ line amounts + printed round-off ≈
+  total`), ISO dates, allowed currency and non-empty fields are re-checked in
   `services/checks.py`. Problems come back with a `field` so a fix form can
   highlight the exact row.
+- **Money is rupees, not paise.** `total`, `round_off` and `items[].amount`
+  are `Decimal` rupees with two places and leave the API as strings —
+  `"128.00"`, never `12800` and never a float. SQLite still gets exact integer
+  paise (`total_minor`); only the confirm route converts, so there is one
+  conversion in the whole project.
+- **The printed Amount column is the truth.** A pharmacy line prints an MRP, a
+  rate, discount percentages and GST, and finally an amount. `items[].amount`
+  is that last number — the money for the whole line, discount applied and tax
+  included — so `qty` never multiplies money and an MRP is never a price. A
+  line bigger than the whole bill is flagged on that row, and a printed
+  `Round Off` has its own field (`round_off`) instead of being folded into the
+  tolerance.
+- **Rounding.** A stated round-off has to close the maths to the paise (±0.02).
+  With none printed, up to ₹1.00 of cashier rounding (127.49 paid as 128.00)
+  is accepted rather than blocked.
 - **The database is the last stop.** `/extract` writes nothing; `/confirm`
   re-runs every check on the *edited* draft, so a hand-edited wrong total is
   rejected with 422 instead of saved.
@@ -143,7 +158,7 @@ curl -X POST http://127.0.0.1:8000/bills/extract \
 # save it (after fixing anything in problems[])
 curl -X POST http://127.0.0.1:8000/bills/confirm \
   -H "Authorization: Bearer <access token>" -H 'Content-Type: application/json' \
-  -d '{"draft":{"shop":"Lulu","date":"2026-10-22","currency":"INR","total_minor":12500,"items":[{"name":"Rice 1kg","qty":2,"price_minor":4500},{"name":"Milk","qty":1,"price_minor":3500}]}}'
+  -d '{"draft":{"shop":"Lulu","date":"2026-10-22","currency":"INR","total":"125.00","round_off":null,"items":[{"name":"Rice 1kg","qty":2,"amount":"80.00"},{"name":"Milk","qty":1,"amount":"45.00"}]}}'
 ```
 
 ## Roadmap

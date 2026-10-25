@@ -15,8 +15,8 @@ DRAFT = BillDraft(
     shop="Lulu Supermarket",
     date="2026-10-22",
     currency="INR",
-    total_minor=12_500,
-    items=[BillItem(name="Rice 1kg", qty=2, price_minor=4_500)],
+    total="45.00",
+    items=[BillItem(name="Rice 1kg", qty=2, amount="45.00")],
 )
 
 
@@ -67,8 +67,22 @@ def test_extract_sends_one_image_and_constrains_the_reply(stub):
     assert image_part.inline_data.data == b"photo-bytes"
 
 
+def test_prompt_asks_for_rupees_not_paise(stub):
+    """The schema is Decimal rupees; the prompt must say the same unit."""
+    client = stub(SimpleNamespace(parsed=DRAFT, text=None))
+    extraction.extract_bill(b"photo-bytes", "image/png")
+
+    prompt = client.models.calls[0]["config"].system_instruction
+    assert "rupees" in prompt
+    # The worked example names both units, with rupees as the answer.
+    assert "Rs 127.49 is 127.49 (not 12749)" in prompt
+
+
 def test_extract_falls_back_to_json_text_when_nothing_was_parsed(stub):
-    stub(SimpleNamespace(parsed=None, text=DRAFT.model_dump_json()))
+    # A real reply carries money as the JSON string "45.00" (not a float).
+    text = DRAFT.model_dump_json()
+    assert '"total":"45.00"' in text
+    stub(SimpleNamespace(parsed=None, text=text))
     assert extraction.extract_bill(b"photo-bytes", "image/jpeg") == DRAFT
 
 

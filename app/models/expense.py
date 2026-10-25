@@ -3,13 +3,17 @@
 Nothing writes here on extraction — a row only exists after the user has seen
 the draft, fixed what was flagged, and pressed confirm.
 
-Money is an integer in the smallest unit (paise), never a float: 1250 is
-Rs 12.50. The column name says `minor` so future-you cannot forget.
+Storage keeps money as an integer in the smallest unit (paise), never a float:
+12500 is Rs 125.00. SQLite has no real decimal type, so integer paise is the
+only representation that is exact. The API speaks rupees (`total`, a Decimal),
+so the `total` property below is the one place the two meet; the confirm route
+converts the other direction.
 Items are a JSON column to start — one table, no joins.
 """
 
 from datetime import date as date_type
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -31,3 +35,8 @@ class Expense(Base):
     # Which prompt text produced the draft this row came from.
     prompt_version: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    @property
+    def total(self) -> Decimal:
+        """The stored paise as rupees, e.g. 12800 -> Decimal("128.00")."""
+        return (Decimal(self.total_minor) / 100).quantize(Decimal("0.01"))

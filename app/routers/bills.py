@@ -5,6 +5,7 @@ live in services/checks.py, and the database is touched only at the very end —
 in `/confirm`, after a human has approved a draft that passes every check.
 """
 
+import json
 from datetime import date as date_type
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
@@ -90,8 +91,11 @@ async def confirm(
         shop=draft.shop.strip(),
         date=date_type.fromisoformat(draft.date),
         currency=draft.currency.upper(),
-        total_minor=draft.total_minor,
-        items=[item.model_dump() for item in draft.items],
+        # The API speaks rupees; SQLite gets exact integer paise.
+        total_minor=int(draft.total * 100),
+        # model_dump_json keeps each amount as the string "127.49", which is
+        # JSON-safe and re-validates back into a Decimal when read out.
+        items=[json.loads(item.model_dump_json()) for item in draft.items],
         notes=draft.notes,
         prompt_version=PROMPT_VERSION,
     )

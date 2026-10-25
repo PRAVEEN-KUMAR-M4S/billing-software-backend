@@ -4,6 +4,8 @@ Gemini itself is faked here — these tests are about the pipeline around it
 (auth, file rules, the cashier check, and the single door into the database).
 """
 
+import json
+
 import pytest
 
 from app.config import MAX_UPLOAD_BYTES
@@ -18,10 +20,10 @@ def draft_payload(**overrides) -> dict:
         "shop": "Lulu Supermarket",
         "date": "2026-10-22",
         "currency": "INR",
-        "total_minor": 12_500,
+        "total": "125.00",
         "items": [
-            {"name": "Rice 1kg", "qty": 2, "price_minor": 4_500},
-            {"name": "Milk", "qty": 1, "price_minor": 3_500},
+            {"name": "Rice 1kg", "qty": 2, "amount": "80.00"},
+            {"name": "Milk", "qty": 1, "amount": "45.00"},
         ],
         "notes": None,
     }
@@ -74,10 +76,10 @@ def test_extract_returns_a_clean_draft(client, auth_headers, fake_gemini):
             shop="Lulu Supermarket",
             date="2026-10-22",
             currency="INR",
-            total_minor=12_500,
+            total="125.00",
             items=[
-                BillItem(name="Rice 1kg", qty=2, price_minor=4_500),
-                BillItem(name="Milk", qty=1, price_minor=3_500),
+                BillItem(name="Rice 1kg", qty=2, amount="80.00"),
+                BillItem(name="Milk", qty=1, amount="45.00"),
             ],
         )
     )
@@ -87,7 +89,9 @@ def test_extract_returns_a_clean_draft(client, auth_headers, fake_gemini):
     assert response.status_code == 200
     body = response.json()
     assert body["problems"] == []
-    assert body["draft"]["total_minor"] == 12_500
+    # Rupees, two places, as a string: never 12500 and never the float 125.0.
+    assert body["draft"]["total"] == "125.00"
+    assert body["draft"]["items"][0]["amount"] == "80.00"
     assert body["draft"]["currency"] == "INR"
     # The photo reached the service with its real media type, and nothing else.
     assert calls == [(PNG, "image/png")]
@@ -98,8 +102,8 @@ def test_extract_flags_a_bad_total_but_still_returns_the_draft(client, auth_head
         BillDraft(
             shop="Lulu Supermarket",
             date="2026-10-22",
-            total_minor=9_999,
-            items=[BillItem(name="Rice 1kg", qty=2, price_minor=4_500)],
+            total="99.99",
+            items=[BillItem(name="Rice 1kg", qty=2, amount="45.00")],
         )
     )
 
@@ -107,8 +111,81 @@ def test_extract_flags_a_bad_total_but_still_returns_the_draft(client, auth_head
 
     assert response.status_code == 200
     body = response.json()
-    assert [problem["field"] for problem in body["problems"]] == ["total_minor"]
-    assert body["draft"]["total_minor"] == 9_999  # the user still sees what was read
+    assert [problem["field"] for problem in body["problems"]] == ["total"]
+    assert body["draft"]["total"] == "99.99"  # the user still sees what was read
+
+
+def test_extract_returns_the_pharmacy_bill_the_way_it_is_printed(client, auth_headers, fake_gemini):
+    """The reported bill: MRP 15.00 x 10, 15% off + 5% GST → 127.49, paid 128.00.
+
+    The line amount is 127.49 and the cashier rounded it up by 0.51 with no
+    Round Off line printed, so the draft passes untouched.
+    """
+    fake_gemini(
+        BillDraft(
+            shop="VCAREOTTAPALAM MEDICALS",
+            date="2026-10-21",
+            total="128.00",
+            items=[BillItem(name="NONURD LC TAB", qty=10, amount="127.49")],
+        )
+    )
+
+    response = post_photo(client, auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["problems"] == []
+    assert body["draft"]["items"][0]["amount"] == "127.49"
+    assert body["draft"]["total"] == "128.00"
+
+
+def test_extract_blames_the_total_when_the_mrp_was_read_as_the_line_money(
+    client, auth_headers, fake_gemini
+):
+    """The MRP read as the line money: the rows are 15.00 against a 128.00 bill."""
+    fake_gemini(
+        BillDraft(
+            shop="VCAREOTTAPALAM MEDICALS",
+            date="2026-10-21",
+            total="128.00",
+            items=[BillItem(name="NONURD LC TAB", qty=10, amount="15.00")],
+        )
+    )
+
+    response = post_photo(client, auth_headers)
+
+    assert response.status_code == 200
+    problems = response.json()["problems"]
+    assert [problem["field"] for problem in problems] == ["total"]
+    assert "15.00" in problems[0]["message"]
+
+
+def test_confirm_accepts_a_draft_that_states_its_round_off(client, auth_headers, expenses):
+    payload = draft_payload(
+        total="127.50",
+        round_off="0.50",
+        items=[{"name": "Rice 1kg", "qty": 2, "amount": "80.00"},
+               {"name": "Milk", "qty": 1, "amount": "47.00"}],
+    )
+    response = client.post("/bills/confirm", headers=auth_headers, json={"draft": payload})
+
+    assert response.status_code == 201
+    assert response.json()["total"] == "127.50"
+    assert len(expenses()) == 1
+
+
+def test_confirm_saves_a_cashier_rounded_bill(client, auth_headers, expenses):
+    """127.49 of items, 128.00 paid, no Round Off line on the paper."""
+    payload = draft_payload(
+        shop="VCAREOTTAPALAM MEDICALS",
+        total="128.00",
+        items=[{"name": "NONURD LC TAB", "qty": 10, "amount": "127.49"}],
+    )
+    response = client.post("/bills/confirm", headers=auth_headers, json={"draft": payload})
+
+    assert response.status_code == 201
+    assert response.json()["total"] == "128.00"
+    assert len(expenses()) == 1
 
 
 def test_extract_reports_a_gemini_failure_as_502_without_saving(
@@ -130,12 +207,12 @@ def test_confirm_refuses_a_wrong_total(client, auth_headers, expenses):
     response = client.post(
         "/bills/confirm",
         headers=auth_headers,
-        json={"draft": draft_payload(total_minor=9_999)},
+        json={"draft": draft_payload(total="99.99")},
     )
 
     assert response.status_code == 422
     detail = response.json()["detail"]
-    assert [problem["field"] for problem in detail["problems"]] == ["total_minor"]
+    assert [problem["field"] for problem in detail["problems"]] == ["total"]
     assert "125.00" in detail["problems"][0]["message"]
     assert expenses() == []  # never saved silently
 
@@ -153,15 +230,17 @@ def test_confirm_saves_the_row_for_the_logged_in_user(client, auth_headers, expe
 
     assert response.status_code == 201
     body = response.json()
-    assert body["total_minor"] == 12_500  # paise, an integer — never 125.0
+    assert body["total"] == "125.00"  # rupees on the way out, exact
     assert body["date"] == "2026-10-22"
     assert body["items"][1]["name"] == "Milk"
 
     rows = expenses()
     assert len(rows) == 1
+    # Paise in SQLite: no floating-point money in the database.
     assert rows[0]["total_minor"] == 12_500
     assert rows[0]["date"] == "2026-10-22"
     assert rows[0]["prompt_version"]  # every saved bill records the prompt that made it
+    assert json.loads(rows[0]["items"])[0]["amount"] == "80.00"
 
     # Two users, two accounts: the row belongs to the token that confirmed it.
     me = client.get("/auth/me", headers=auth_headers).json()

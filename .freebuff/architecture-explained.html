@@ -219,9 +219,9 @@
     │   └── <span style="color:var(--service)">checks.py</span>       <span class="cmt"># pure cashier checks: maths, dates, currency</span>
     └── <span style="color:var(--model)">models/</span>             <span class="cmt"># "the warehouse"  — tables and columns</span>
         ├── <span style="color:var(--model)">user.py</span>          <span class="cmt"># users: id, email, hashed_password, created_at</span>
-        └── <span style="color:var(--model)">expense.py</span>       <span class="cmt"># confirmed bills: total_minor, date, items (JSON)</span>
+        └── <span style="color:var(--model)">expense.py</span>       <span class="cmt"># confirmed bills: total_minor (paise), date, items (JSON)</span>
 
-tests/                     <span class="cmt"># pytest — 23 tests around checks, routes, extraction</span></pre>
+tests/                     <span class="cmt"># pytest — 38 tests around checks, routes, extraction</span></pre>
 
     <div class="legend" aria-label="Color legend">
       <span class="pill p-router">routers/ = URL &amp; HTTP</span>
@@ -422,8 +422,8 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
   <div class="callout warn"><b>The same instinct, now in the bill route</b>
   “Reply in JSON” in a prompt is the <em>text</em> version of storing a password in plain text —
   works until it doesn't. So the Gemini call constrains the reply with
-  <code>response_schema</code>, <code>check_bill()</code> re-validates it (money in integer paise,
-  ISO dates, maths), and nothing reaches the table without a human confirming.</div>
+  <code>response_schema</code>, <code>check_bill()</code> re-validates it (money in rupees as exact
+  decimals, ISO dates, maths), and nothing reaches the table without a human confirming.</div>
 </section>
 
 <!-- ==================== API TABLE ==================== -->
@@ -443,7 +443,7 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
   </div>
   <p style="margin-top:14px;font-size:14.5px;color:var(--muted)">Interactive playground: <a href="http://127.0.0.1:8000/docs" target="_blank" rel="noopener">127.0.0.1:8000/docs</a> —
   every row above is clickable and runnable. Auth behaviours were verified against a live server; the bill routes are
-  covered by <code>uv run pytest</code> (23 tests): 401, 415, 413, a flagged wrong total, a 422 on confirm, and the
+  covered by <code>uv run pytest</code> (38 tests): 401, 415, 413, a flagged wrong total, a 422 on confirm, and the
   saved row read back from SQLite.</p>
 </section>
 
@@ -463,7 +463,7 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
         <tr><td>Gemini key + model id</td><td><code>config.py</code> ← <code>.env</code></td><td>swapping the model is one line in <code>.env</code>; no model id in code</td></tr>
         <tr><td>The bill shape</td><td><code>schemas/bill.py</code></td><td>the same schema Gemini fills, the checks judge, and confirm accepts</td></tr>
         <tr><td>Extraction result</td><td>nobody, until confirm</td><td>a draft lives only in the HTTP response — the database cannot hold an unreviewed bill</td></tr>
-        <tr><td>Money</td><td>one integer column</td><td><code>total_minor</code> in paise; display divides by 100, floats never enter</td></tr>
+        <tr><td>Money</td><td>one shape, one conversion</td><td>the API speaks rupees as two-place decimals (<code>"128.00"</code>); SQLite keeps exact integer paise in <code>total_minor</code>; only <code>/bills/confirm</code> converts, so floats never enter</td></tr>
         <tr><td>Uploaded photo</td><td>nobody</td><td>read into memory, sent once, dropped — bills are personal data</td></tr>
       </tbody>
     </table>
@@ -478,11 +478,11 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 1 · Authentication <span class="tag-done">— DONE</span></b>
         <span>register / login / me, bcrypt, JWT, get_current_user. Verified end-to-end.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 2 · The bill shape <span class="tag-done">— DONE</span></b>
-        <span><code>schemas/bill.py</code> (<code>BillDraft</code>, <code>BillItem</code>, <code>Problem</code>) and <code>models/expense.py</code>. Money in integer paise, dates ISO, items as JSON.</span></div></li>
+        <span><code>schemas/bill.py</code> (<code>BillDraft</code>, <code>BillItem</code>, <code>Problem</code>) and <code>models/expense.py</code>. Money as rupees in <code>Decimal</code> (<code>total</code>, <code>round_off</code>, <code>items[].amount</code>), dates ISO, items as JSON.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 3–4 · Photo → structured draft <span class="tag-done">— DONE</span></b>
         <span><code>POST /bills/extract</code> → <code>services/extraction.py</code> → one Gemini call with <code>response_schema=BillDraft</code>. No plain-text describe step; we went straight to the constrained shape.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 5 · Check before you save <span class="tag-done">— DONE</span></b>
-        <span><code>check_bill()</code> reruns on the edited draft in <code>POST /bills/confirm</code>: maths ±2 paise, ISO date, currency, bounds. Wrong total → 422, never a silent save.</span></div></li>
+        <span><code>check_bill()</code> reruns on the edited draft in <code>POST /bills/confirm</code>: maths (line amounts + printed round-off, ±0.02 with a round-off / ₹1.00 cashier rounding without one), ISO date, currency, bounds. Wrong total → 422, never a silent save.</span></div></li>
       <li class="now"><span class="dot"></span><div class="body"><b>Phase 6 · List, demo, ship <span class="tag-now">— NEXT</span></b>
         <span><code>GET /expenses</code> + monthly total, <code>app/static/index.html</code> (upload, fix form, list, Demo button), then 10 real bills through the live link → the N/10 score.</span></div></li>
     </ul>
