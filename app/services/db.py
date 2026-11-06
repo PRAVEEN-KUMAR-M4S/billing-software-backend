@@ -3,9 +3,7 @@ from collections.abc import AsyncGenerator
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import DeclarativeBase
 
-from app.config import EXPENSE_CATEGORIES
-
-DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+from app.config import DATABASE_URL, EXPENSE_CATEGORIES
 
 
 class Base(DeclarativeBase):

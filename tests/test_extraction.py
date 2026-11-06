@@ -10,7 +10,7 @@ import pytest
 from google.genai import errors
 
 from app.schemas.bill import BillDraft, BillItem
-from app.services import extraction
+from app.services import extraction, gemini
 
 DRAFT = BillDraft(
     shop="Lulu Supermarket",
@@ -48,9 +48,11 @@ def stub(monkeypatch):
     """Replace the real client with a fake one and pretend a key exists."""
 
     def install(response):
-        monkeypatch.setattr(extraction, "GEMINI_API_KEY", "test-key")
+        # The client and the model list live in the shared module now; extraction
+        # and the insights service both read them there.
+        monkeypatch.setattr(gemini, "GEMINI_API_KEY", "test-key")
         client = FakeClient(response)
-        monkeypatch.setattr(extraction, "_client", client)
+        monkeypatch.setattr(gemini, "_client", client)
         return client
 
     return install
@@ -63,7 +65,7 @@ def test_extract_sends_one_image_and_constrains_the_reply(stub):
 
     assert len(client.models.calls) == 1  # one call per bill, always
     call = client.models.calls[0]
-    assert call["model"] == extraction.GEMINI_MODEL
+    assert call["model"] == gemini.GEMINI_MODEL
     config = call["config"]
     assert config.response_mime_type == "application/json"
     assert config.response_schema is BillDraft  # our shape, not free-form text
@@ -128,30 +130,30 @@ def quota_error():
 
 def test_a_busy_model_falls_over_to_the_next_model(stub, monkeypatch):
     """503 is the model's capacity, so another model can succeed where a key can't."""
-    monkeypatch.setattr(extraction, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
+    monkeypatch.setattr(gemini, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
     client = stub([busy_error(), SimpleNamespace(parsed=DRAFT, text=None)])
 
     assert extraction.extract_bill(b"photo-bytes", "image/png") == DRAFT
     assert [call["model"] for call in client.models.calls] == [
-        extraction.GEMINI_MODEL,
+        gemini.GEMINI_MODEL,
         "fallback-model",
     ]
 
 
 def test_every_model_busy_is_a_503_that_names_them(stub, monkeypatch):
-    monkeypatch.setattr(extraction, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
+    monkeypatch.setattr(gemini, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
     stub([busy_error(), busy_error()])
 
     with pytest.raises(extraction.ExtractionError) as caught:
         extraction.extract_bill(b"photo-bytes", "image/png")
 
     assert caught.value.status_code == 503
-    assert extraction.GEMINI_MODEL in str(caught.value)
+    assert gemini.GEMINI_MODEL in str(caught.value)
     assert "fallback-model" in str(caught.value)
 
 
 def test_spent_quota_is_not_spent_again_on_another_model(stub, monkeypatch):
-    monkeypatch.setattr(extraction, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
+    monkeypatch.setattr(gemini, "GEMINI_FALLBACK_MODELS", ["fallback-model"])
     client = stub(quota_error())
 
     with pytest.raises(extraction.ExtractionError) as caught:
@@ -169,8 +171,8 @@ def test_extract_rejects_a_reply_that_is_not_a_bill(stub):
 
 
 def test_missing_key_fails_with_a_clear_message(monkeypatch):
-    monkeypatch.setattr(extraction, "GEMINI_API_KEY", None)
-    monkeypatch.setattr(extraction, "_client", None)
+    monkeypatch.setattr(gemini, "GEMINI_API_KEY", None)
+    monkeypatch.setattr(gemini, "_client", None)
     with pytest.raises(extraction.ExtractionError) as caught:
         extraction.extract_bill(b"photo-bytes", "image/jpeg")
     assert "GEMINI_API_KEY" in str(caught.value)

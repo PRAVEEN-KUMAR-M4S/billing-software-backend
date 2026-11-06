@@ -14,7 +14,7 @@ validated draft via Gemini, and only a human-confirmed draft reaches the databas
 uv sync                  # install dependencies (once)
 cp .env.example .env     # then set SECRET_KEY and GEMINI_API_KEY
 uv run main.py           # start the server on http://127.0.0.1:8000
-uv run pytest            # 52 tests: checks, routes, the AI module, the schema upgrade
+uv run pytest            # 79 tests: checks, routes, balance, smart tips, the AI modules, schema upgrades
 ```
 
 - Interactive API docs: http://127.0.0.1:8000/docs
@@ -30,19 +30,26 @@ app/
 ├── deps.py          # shared route protections (get_current_user)
 ├── routers/         # LAYER 1 — the web: URLs, status codes, HTTP
 │   ├── auth.py
-│   └── bills.py     # POST /bills/extract (draft) + POST /bills/confirm (save)
+│   ├── account.py   # PUT /account/balance (set) + GET /account (left, spent)
+│   ├── bills.py     # POST /bills/extract (draft) + POST /bills/confirm (save)
+│   └── insights.py  # GET /insights — Smart Tips (tip + facts + challenge)
 ├── schemas/         # LAYER 2 — the shapes: what data comes IN and OUT
 │   ├── auth.py
-│   └── bill.py      # THE SHAPE: BillDraft, BillItem, Problem
+│   ├── account.py   # BalanceSetRequest, AccountOut
+│   ├── bill.py      # THE SHAPE: BillDraft, BillItem, Problem
+│   └── insight.py   # InsightsOut, SmartTip, QuickFacts, TipDraft
 ├── services/        # LAYER 3 — the logic: database, crypto, AI, rules
 │   ├── db.py
 │   ├── auth.py
-│   ├── extraction.py  # ★ the only file that talks to Gemini
+│   ├── gemini.py      # ★ shared client, model fallback list, error codes
+│   ├── extraction.py  # reads one bill photo (one Gemini call)
+│   ├── insights.py    # month maths, facts, local tip, the monthly tip call
 │   └── checks.py      # pure cashier checks (maths, dates, currency)
 └── models/          # LAYER 4 — the storage: tables and columns
-    ├── user.py
+    ├── user.py      # + balance_minor (paise, NULL until the user sets one)
     ├── refresh_token.py
-    └── expense.py   # confirmed bills only (paise in SQLite, ISO date)
+    ├── expense.py   # confirmed bills only (paise in SQLite, ISO date)
+    └── insight.py   # monthly_insights: one saved tip per user per month
 
 tests/               # pytest: checks, routes, extraction wiring
 ```
@@ -67,8 +74,11 @@ Each folder answers one question:
 | POST   | `/auth/refresh`  | `{refresh_token}`             | `{access_token, refresh_token}` (new pair) |
 | POST   | `/auth/logout`   | `{refresh_token}`             | nothing (204) — revokes that session |
 | GET    | `/auth/me`       | — (Bearer token header)       | `{id, email}`                        |
+| PUT    | `/account/balance` | `{balance}` (rupees, e.g. `"5000.00"`) | `{balance, spent, currency}` — replaces the balance |
+| GET    | `/account`       | — (Bearer token header)       | `{balance, spent, currency}`; `balance` is null until set |
 | POST   | `/bills/extract` | multipart `file` (JPG/PNG ≤5 MB) | `{draft, problems[]}` — writes nothing |
 | POST   | `/bills/confirm` | `{draft}` (the user's edited draft) | the saved bill (201), or 422 + `problems[]` |
+| GET    | `/insights?month=YYYY-MM` | — (Bearer token; month defaults to now) | `{month, month_label, tip, facts, challenge}` — one AI call per user per month |
 
 Try it:
 
@@ -102,6 +112,88 @@ Why two tokens? The access token is stateless and can't be revoked, so it's only
 trusted for 30 minutes. The refresh token lives in the DB, so the server can
 revoke it (logout) and replace it on every use (rotation) — that's what makes
 the setup safe for a month-long login.
+
+## The balance (one number per user, spent by every bill)
+
+```bash
+# the money available right now — the opening balance the first time,
+# a correction on any later call (it replaces, it does not add)
+curl -X PUT http://127.0.0.1:8000/account/balance \
+  -H "Authorization: Bearer <access token>" -H 'Content-Type: application/json' \
+  -d '{"balance":"5000.00"}'
+# {"balance":"5000.00","spent":"0.00","currency":"INR"}
+
+curl http://127.0.0.1:8000/account -H "Authorization: Bearer <access token>"
+# after a 128.00 bill: {"balance":"4872.00","spent":"128.00","currency":"INR"}
+```
+
+- **Stored, not derived.** The opening money is something only the user knows, so
+  `users.balance_minor` holds what is left; `spent` is the derived half (the sum,
+  in SQL, of that user's saved bills). A balance for one user never moves because
+  of another user's bill.
+- **NULL means "not set yet".** A bill confirmed before any balance exists is
+  saved normally and leaves the balance unset — the app simply has no number to
+  spend yet. Setting it afterwards is the opening balance, not 5000 − 125.
+- **One atomic decrement.** `/bills/confirm` inserts the row and runs
+  `UPDATE users SET balance_minor = balance_minor - ?` in the same transaction,
+  so two bills confirmed at once can't both subtract from the same old value.
+  A rejected draft spends nothing.
+- **Overspending is allowed.** Going below zero is reported (a negative
+  `balance`), not refused: the bill is real, and the number is information.
+- **Rupees in, paise stored, rupees out** — `"5000.00"` in the API, `500000` in
+  SQLite, exactly like a bill total.
+
+## Smart Tips (the monthly screen, one AI call)
+
+```bash
+curl "http://127.0.0.1:8000/insights?month=2026-10" \
+  -H "Authorization: Bearer <access token>"
+```
+
+```json
+{
+  "month": "2026-10",
+  "month_label": "October 2026",
+  "currency": "INR",
+  "generated_at": "2026-10-30T13:00:18",
+  "tip": {
+    "text": "Food & drink is where you have spent the most. Keep an eye on the small purchases there.",
+    "category": "dining",
+    "action_label": "See Food & drink bills",
+    "source": "ai"
+  },
+  "facts": {
+    "bills": 2,
+    "total": "690.00",
+    "average_bill": "345.00",
+    "biggest_category": {"category": "dining", "label": "Food & drink", "icon": "strokeRoundedRestaurant01", "total": "690.00", "bills": 2},
+    "most_visited_shop": {"shop": "Asha Tiffins", "bills": 2}
+  },
+  "challenge": {"title": "Record every bill for 7 days", "note": "A quick note after each purchase makes spending easier to follow.", "week_start": "2026-10-26"}
+}
+```
+
+- **One call per user per month, ever.** The tip is written on the first open of
+  that month and saved in `monthly_insights` (unique on `user_id` + `month`).
+  Opening the screen 50 more times costs nothing. A past month opened later is
+  generated at that point, once.
+- **The facts are never cached.** They are one indexed SQL sum over that month,
+  recomputed on every request, so a bill added today shows in today's totals.
+  Only the sentence is frozen for the month.
+- **`source` tells you which tip you got.** `ai` is Gemini's, constrained by
+  `TipDraft` to a category from the enum, a two-sentence headline and a button
+  label. `local` is arithmetic: "Food & drink is your biggest expense this
+  month: 690.00 across 2 bills…".
+- **The screen never fails.** Busy model or spent quota → `local` tip and HTTP
+  200. No key at all → `local` tip. A fallback is retried after
+  `INSIGHTS_RETRY_HOURS` (6), so one bad quota day on the 1st does not own the
+  month; a real `ai` tip is never replaced.
+- **Empty month = no AI call, nothing cached.** The response says "No bills this
+  month yet" with zeroed facts, because a tip written for zero bills would be
+  wrong the moment the first bill arrives.
+- **Postgres-ready.** All the queries are portable SQL (half-open date range,
+  no `strftime`), and `DATABASE_URL` is a setting — switch to
+  `postgresql+asyncpg://…` without code changes.
 
 ## How a bill becomes a row (and never silently)
 
@@ -181,7 +273,13 @@ curl -X POST http://127.0.0.1:8000/bills/confirm \
 - **Phase 2 (done):** the bill shape → `schemas/bill.py` + `expenses` table
 - **Phase 3–4 (done):** photo → Gemini → structured `BillDraft` (one call)
 - **Phase 5 (done):** checks before save + confirm endpoint
+- **Balance (done):** per-user balance (`PUT /account/balance`, `GET /account`), spent down by each confirmed bill
+- **Smart Tips (done):** `GET /insights` — monthly AI tip cached per user/month, live facts, weekly challenge
 - **Phase 6:** "My Expenses" list + monthly total, demo bills, ship
 - **Then:** 10 real bills through the live link → "N/10" + the miss
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/AUTH.md](docs/AUTH.md).
+
+**Learning the code?** [docs/LEARNING_GUIDE.md](docs/LEARNING_GUIDE.md) is a code-by-code walkthrough of the
+whole backend — every file, the money/AI/caching decisions, and an interview question bank with a three-day
+study plan.

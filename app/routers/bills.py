@@ -11,7 +11,7 @@ from datetime import date as date_type
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import ALLOWED_IMAGE_TYPES, MAX_UPLOAD_BYTES, PROMPT_VERSION
 from app.deps import get_current_user
@@ -107,6 +107,16 @@ async def confirm(
         prompt_version=PROMPT_VERSION,
     )
     session.add(row)
+    # Spend it in the same transaction as the insert, with one SQL statement:
+    # read-modify-write in Python would let two bills both subtract from the
+    # same old balance. A NULL balance (never set) stays NULL, which is exactly
+    # what an unset account should do. Going below zero is allowed — the bill is
+    # real, and an overspent balance is information, not an error.
+    await session.execute(
+        update(User)
+        .where(User.id == user.id)
+        .values(balance_minor=User.balance_minor - row.total_minor)
+    )
     await session.commit()
     await session.refresh(row)
     return row

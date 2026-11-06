@@ -15,6 +15,11 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
+# --- Database --------------------------------------------------------------
+# One URL, one place. SQLite by default; point this at Postgres (add asyncpg)
+# without touching a line of code.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+
 # --- Bill extraction (Gemini) ---------------------------------------------
 # The SDK reads nothing on its own: we pass the key explicitly so a missing
 # key fails at request time with a clear message instead of at import time.
@@ -106,6 +111,20 @@ EXPENSE_CATEGORIES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+# What the app shows a human (the slug is what the API and the database use).
+EXPENSE_CATEGORY_LABELS: dict[str, str] = {
+    "groceries": "Groceries",
+    "dining": "Food & drink",
+    "transport": "Transport",
+    "health": "Health",
+    "utilities": "Bills & utilities",
+    "shopping": "Shopping",
+    "rent": "Rent",
+    "entertainment": "Entertainment",
+    "education": "Education",
+    "other": "Other",
+}
+
 _CATEGORY_HELP = "\n".join(
     f"- {category}: {', '.join(icons)}" for category, icons in EXPENSE_CATEGORIES.items()
 )
@@ -162,4 +181,44 @@ Category and icon (required — the app draws the icon):
   Pick the one that best matches what was bought.
 
 {_CATEGORY_HELP}
+""".strip()
+
+# --- Smart tips (monthly insights) -----------------------------------------
+# One Gemini call per user per month, cached in `monthly_insights`. The facts
+# (biggest category, most visited shop, average bill) are computed in SQL and
+# never cost a call; only the sentence on top of them does.
+INSIGHTS_PROMPT_VERSION = "v1"
+# A tip built from local arithmetic is still true, just plainer. It is retried
+# after this long so a quota day on the 1st does not cost the whole month.
+INSIGHTS_RETRY_HOURS = 6
+
+_INSIGHTS_LABELS = "\n".join(
+    f"- {category}: {label}" for category, label in EXPENSE_CATEGORY_LABELS.items()
+)
+
+INSIGHTS_PROMPT = f"""
+You write one short money tip for a person's monthly spending summary. The facts
+are computed from their own saved bills for one month.
+
+What you are given: the month, the number of bills, the total, the average bill,
+the biggest category (label, amount, bill count) and the most visited shop.
+
+How to write it:
+- Speak to the person directly ("you"), calmly and without judgement. No shame,
+  no exclamation marks, no emojis, no moralising.
+- Two sentences maximum, under 160 characters. Be specific to the facts: name
+  the category or the shop, and use a real amount you were given.
+- Suggest one small, concrete thing they can do. Not a lecture, not a list.
+- Never invent a number, a shop, a category or a purchase you were not given.
+- Do not mention tax, GST, discounts or extraction. This is about their habits.
+- If there is only one bill, say what you can honestly say from one bill.
+
+category: exactly one slug from the list below — usually the biggest category.
+Pick a different one only when the facts make it clearly more useful.
+
+action_label: a short button label naming that category, under 32 characters,
+for example "See Food & drink bills".
+
+Categories (slug: what the app calls it):
+{_INSIGHTS_LABELS}
 """.strip()

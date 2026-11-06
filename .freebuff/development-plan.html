@@ -280,21 +280,28 @@
 ├── deps.py              # unchanged
 ├── <span style="color:var(--router)">routers/</span>
 │   ├── auth.py          # unchanged
-│   ├── bills.py         <span style="color:#087f5b">✅ extract → confirm</span>
+│   ├── account.py       <span style="color:#087f5b">✅ PUT /account/balance, GET /account</span>
+│   ├── bills.py         <span style="color:#087f5b">✅ extract → confirm (and spend the balance)</span>
+│   ├── insights.py      <span style="color:#087f5b">✅ GET /insights — monthly Smart Tips</span>
 │   └── expenses.py      <span style="color:#8a93a8">P6 · list + monthly total + demo</span>
 ├── <span style="color:var(--schema)">schemas/</span>
 │   ├── auth.py          # unchanged
-│   └── bill.py          <span style="color:#087f5b">✅ THE SHAPE: BillDraft / BillItem / Problem</span>
+│   ├── account.py       <span style="color:#087f5b">✅ BalanceSetRequest / AccountOut</span>
+│   ├── bill.py          <span style="color:#087f5b">✅ THE SHAPE: BillDraft / BillItem / Problem</span>
+│   └── insight.py       <span style="color:#087f5b">✅ InsightsOut / SmartTip / TipDraft</span>
 ├── <span style="color:var(--service)">services/</span>
-│   ├── db.py            # unchanged
+│   ├── db.py            <span style="color:#087f5b">✅ DATABASE_URL from .env (Postgres-ready)</span>
 │   ├── auth.py          # unchanged
-│   ├── extraction.py    <span style="color:var(--ai)">✅ ★ the Gemini call (one function)</span>
+│   ├── gemini.py        <span style="color:var(--ai)">✅ ★ shared client, model fallback, 503/429</span>
+│   ├── extraction.py    <span style="color:var(--ai)">✅ one bill → one draft (one call)</span>
+│   ├── insights.py      <span style="color:var(--ai)">✅ month facts, local tip, monthly tip call</span>
 │   └── checks.py        <span style="color:#087f5b">✅ check_bill() — pure validation</span>
 └── <span style="color:var(--model)">models/</span>
-    ├── user.py          # unchanged
-    └── expense.py       <span style="color:#087f5b">✅ expenses table (paise in SQLite, ISO date)</span>
+    ├── user.py          <span style="color:#087f5b">✅ + balance_minor (paise, NULL until set)</span>
+    ├── expense.py       <span style="color:#087f5b">✅ expenses table (paise in SQLite, ISO date)</span>
+    └── insight.py       <span style="color:#087f5b">✅ monthly_insights — one tip per user per month</span>
 
-tests/                   <span style="color:#087f5b">✅ 52 pytest tests: checks, routes, extraction, schema upgrades</span>
+tests/                   <span style="color:#087f5b">✅ 79 pytest tests: checks, routes, balance, tips, AI, schema upgrades</span>
 app/static/index.html    <span style="color:#8a93a8">P6 · tiny page: upload + list + demo</span>
 samples/                 <span style="color:#8a93a8">P6 · 5 demo photos</span>
 <span style="color:#8a93a8"># uploads/ — deliberately absent: photos are never stored</span>
@@ -685,8 +692,13 @@ Extract this receipt or bill into the provided schema.
         <li><code>POST /bills/confirm</code> — accepts the edited draft, <b>re-runs every check</b>, then
         writes the row with <code>user_id</code> from the token</li>
         <li>Adversarial case tested: hand-edit the total → 422, and the table stays empty</li>
+        <li>Balance: <code>PUT /account/balance</code> + <code>GET /account</code>; each confirmed bill
+        runs <code>balance_minor = balance_minor - total</code> in the same transaction, and a 422 spends nothing</li>
+        <li>Smart Tips: <code>GET /insights?month=YYYY-MM</code> — one Gemini tip per user/month, cached in
+        <code>monthly_insights</code> (unique key), facts summed live, and a local tip when the model is busy,
+        out of quota, or has no key — the screen never fails</li>
       </ul>
-      <div class="checkpoint"><b>Checkpoint passed:</b> wrong total flagged, never saved silently.</div>
+      <div class="checkpoint"><b>Checkpoint passed:</b> wrong total flagged, never saved silently — and a saved bill spends only its owner's balance.</div>
     </div>
 
     <div class="card" style="border-top:4px solid var(--deps)">
@@ -894,7 +906,7 @@ CARD: "9 / 10 bills extracted correctly"
 
 <footer>
   Freebuff Desktop · Bill Reader API — Development Plan Phase 2 → Ship ·
-  Phases 2–5 shipped with Gemini · Phase 6 (list, demo, ship) next ·
+  Phases 2–5 + balance &amp; Smart Tips shipped with Gemini · Phase 6 (list, demo, ship) next ·
   built on the Phase 1 architecture (<code>README.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>docs/AUTH.md</code>)
 </footer>
 

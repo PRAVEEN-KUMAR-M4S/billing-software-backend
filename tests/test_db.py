@@ -11,6 +11,16 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.services import db as db_module
 
+# The `users` table as it existed before balance_minor was added.
+OLD_USERS = """
+CREATE TABLE users (
+    id INTEGER NOT NULL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP NOT NULL
+)
+"""
+
 # The `expenses` table as it existed before category/icon were added.
 OLD_EXPENSES = """
 CREATE TABLE expenses (
@@ -52,3 +62,25 @@ def test_startup_adds_new_columns_and_keeps_existing_rows(db_file, monkeypatch):
     assert {"category", "icon"} <= columns
     # The row survives, and an unclassified bill becomes "other" with a drawable icon.
     assert rows == [("Lulu", 12_500, "other", "strokeRoundedHelpCircle")]
+
+
+def test_startup_adds_the_balance_column_to_an_existing_users_table(db_file, monkeypatch):
+    with sqlite3.connect(db_file) as connection:
+        connection.execute(OLD_USERS)
+        connection.execute("CREATE UNIQUE INDEX ix_users_email ON users (email)")
+        connection.execute(
+            "INSERT INTO users (email, hashed_password) VALUES ('ana@example.com', 'x')"
+        )
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{db_file}")
+    monkeypatch.setattr(db_module, "engine", engine)
+
+    asyncio.run(db_module.create_db_and_table())
+
+    with sqlite3.connect(db_file) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(users)")}
+        row = connection.execute("SELECT email, balance_minor FROM users").fetchone()
+
+    assert "balance_minor" in columns
+    # Existing accounts survive with no balance, which is what "not set yet" means.
+    assert row == ("ana@example.com", None)

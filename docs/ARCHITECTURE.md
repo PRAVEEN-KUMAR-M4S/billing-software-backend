@@ -77,9 +77,16 @@ This is the pattern every future protected route reuses — including
 | `app/services/db.py`  | How do we talk to the database?         | async engine + session factory |
 | `app/models/user.py`  | What does a user row look like?         | SQLAlchemy table definition |
 | `app/deps.py`        | Is this caller authenticated?             | token → User |
+| `app/routers/account.py` | Which URLs own the balance?            | set (PUT) / read (GET) |
+| `app/schemas/account.py` | What is a balance, exactly?            | rupees with two places, never paise |
 | `app/routers/bills.py` | Which URLs read and save bills?        | extract (draft) / confirm (row) |
 | `app/schemas/bill.py`  | What is a bill, exactly?               | one shape: Gemini, checks, confirm |
-| `app/services/extraction.py` | How do we read a photo?          | the only Gemini call |
+| `app/services/gemini.py` | How do we talk to Gemini at all?  | client, model list, 503/429 typing |
+| `app/services/extraction.py` | How do we read a photo?          | one Gemini call for one bill |
+| `app/routers/insights.py` | Which URL fills the Smart Tips screen? | GET /insights?month=YYYY-MM |
+| `app/schemas/insight.py` | What is a tip, exactly?           | tip + facts + challenge, money in rupees |
+| `app/services/insights.py` | How is a month summarised?       | date range, facts, local tip, one AI call |
+| `app/models/insight.py` | What is a saved tip?               | one row per user per month |
 | `app/services/checks.py` | Is this draft trustworthy?           | pure functions, no I/O |
 | `app/models/expense.py` | What is a saved bill?                 | paise in SQLite, rupees out, ISO date |
 
@@ -90,6 +97,8 @@ This is the pattern every future protected route reuses — including
 | `SECRET_KEY`, expiry | `config.py` (from `.env`) | one place, never committed |
 | database connection  | `services/db.py`     | single engine, sessions are per-request |
 | the logged-in user   | the JWT itself       | servers stay stateless — no session table |
+| the monthly tip | `monthly_insights` | unique on (user_id, month): one AI call per month; the facts around it are recomputed every request, so only the sentence is frozen |
+| money left (balance) | `users.balance_minor` | one number per user; written only by `account.py` and the confirm route's atomic decrement — never recomputed from bills, because the opening money is not ours to know |
 
 ## 5. How this maps onto the bill project
 

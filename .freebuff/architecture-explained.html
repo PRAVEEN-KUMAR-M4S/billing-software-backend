@@ -208,20 +208,27 @@
     ├── <b>deps.py</b>            <span class="cmt"># shared protection: token → user</span>
     ├── <span style="color:var(--router)">routers/</span>            <span class="cmt"># "the web desk"  — which URL, which status</span>
     │   ├── <span style="color:var(--router)">auth.py</span>         <span class="cmt"># POST /auth/register, /auth/login, GET /auth/me</span>
-    │   └── <span style="color:var(--router)">bills.py</span>        <span class="cmt"># POST /bills/extract (draft), POST /bills/confirm (save)</span>
+    │   ├── <span style="color:var(--router)">account.py</span>      <span class="cmt"># PUT /account/balance (set), GET /account (balance, spent)</span>
+    │   ├── <span style="color:var(--router)">bills.py</span>        <span class="cmt"># POST /bills/extract (draft), POST /bills/confirm (save)</span>
+    │   └── <span style="color:var(--router)">insights.py</span>     <span class="cmt"># GET /insights — Smart Tips (monthly tip + facts)</span>
     ├── <span style="color:var(--schema)">schemas/</span>            <span class="cmt"># "the form"       — exact fields and types</span>
     │   ├── <span style="color:var(--schema)">auth.py</span>         <span class="cmt"># UserCreate, UserLogin, TokenResponse, UserOut</span>
-    │   └── <span style="color:var(--schema)">bill.py</span>         <span class="cmt"># THE SHAPE: BillDraft, BillItem, Problem</span>
+    │   ├── <span style="color:var(--schema)">account.py</span>      <span class="cmt"># BalanceSetRequest, AccountOut (rupees in and out)</span>
+    │   ├── <span style="color:var(--schema)">bill.py</span>         <span class="cmt"># THE SHAPE: BillDraft, BillItem, Problem</span>
+    │   └── <span style="color:var(--schema)">insight.py</span>      <span class="cmt"># InsightsOut, SmartTip, QuickFacts, TipDraft</span>
     ├── <span style="color:var(--service)">services/</span>           <span class="cmt"># "the workshop"   — HOW things are done</span>
     │   ├── <span style="color:var(--service)">db.py</span>            <span class="cmt"># async database engine + session per request</span>
     │   ├── <span style="color:var(--service)">auth.py</span>         <span class="cmt"># bcrypt hash/verify, JWT create/decode</span>
-    │   ├── <span style="color:var(--service)">extraction.py</span>   <span class="cmt"># ★ the only file that talks to Gemini</span>
+    │   ├── <span style="color:var(--service)">gemini.py</span>       <span class="cmt"># ★ shared Gemini client, model fallback, 503/429</span>
+    │   ├── <span style="color:var(--service)">extraction.py</span>   <span class="cmt"># one photo → one bill draft (one AI call)</span>
+    │   ├── <span style="color:var(--service)">insights.py</span>     <span class="cmt"># month facts, local tip, the monthly AI tip</span>
     │   └── <span style="color:var(--service)">checks.py</span>       <span class="cmt"># pure cashier checks: maths, dates, currency</span>
     └── <span style="color:var(--model)">models/</span>             <span class="cmt"># "the warehouse"  — tables and columns</span>
-        ├── <span style="color:var(--model)">user.py</span>          <span class="cmt"># users: id, email, hashed_password, created_at</span>
-        └── <span style="color:var(--model)">expense.py</span>       <span class="cmt"># confirmed bills: total_minor (paise), date, items (JSON)</span>
+        ├── <span style="color:var(--model)">user.py</span>          <span class="cmt"># users: id, email, hashed_password, balance_minor, created_at</span>
+        ├── <span style="color:var(--model)">expense.py</span>       <span class="cmt"># confirmed bills: total_minor (paise), date, items (JSON)</span>
+        └── <span style="color:var(--model)">insight.py</span>       <span class="cmt"># monthly_insights: one saved tip per user per month</span>
 
-tests/                     <span class="cmt"># pytest — 52 tests around checks, routes, extraction, schema upgrades</span></pre>
+tests/                     <span class="cmt"># pytest — 79 tests around checks, routes, balance, tips, AI, schema upgrades</span></pre>
 
     <div class="legend" aria-label="Color legend">
       <span class="pill p-router">routers/ = URL &amp; HTTP</span>
@@ -436,15 +443,19 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/auth/register</code></td><td><code>{email, password}</code></td><td>201 <code>{id, email}</code></td><td>409 duplicate · 422 bad input</td></tr>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/auth/login</code></td><td><code>{email, password}</code></td><td>200 <code>{access_token}</code></td><td>401 wrong creds · 422 bad input</td></tr>
         <tr><td><span class="pill p-router">GET</span></td><td><code>/auth/me</code></td><td>— (Bearer token)</td><td>200 <code>{id, email}</code></td><td>401 missing/invalid/deleted</td></tr>
+        <tr><td><span class="pill p-router">PUT</span></td><td><code>/account/balance</code></td><td><code>{balance}</code> — rupees, e.g. <code>"5000.00"</code></td><td>200 <code>{balance, spent, currency}</code> — replaces the number</td><td>401 · 422 negative or not a number</td></tr>
+        <tr><td><span class="pill p-router">GET</span></td><td><code>/account</code></td><td>— (Bearer token)</td><td>200 <code>{balance, spent, currency}</code>; <code>balance</code> is null until set</td><td>401 missing/invalid/deleted</td></tr>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/bills/extract</code></td><td>multipart <code>file</code> (JPG/PNG ≤ 5&nbsp;MB)</td><td>200 <code>{draft, problems[]}</code> — writes nothing</td><td>401 · 415 wrong type · 413 too big · 503 model busy (Retry-After) · 429 quota · 502 other</td></tr>
         <tr><td><span class="pill p-router">POST</span></td><td><code>/bills/confirm</code></td><td><code>{draft}</code> (the edited draft)</td><td>201 saved bill</td><td>401 · 422 <code>problems[]{field, message}</code></td></tr>
+        <tr><td><span class="pill p-router">GET</span></td><td><code>/insights</code></td><td><code>?month=YYYY-MM</code> (optional, defaults to now)</td><td>200 <code>{month, month_label, tip, facts, challenge}</code> — one AI call per user per month</td><td>401 · 422 bad month. Gemini being busy or out of quota is <b>not</b> a failure: the tip comes back <code>source: "local"</code></td></tr>
       </tbody>
     </table>
   </div>
   <p style="margin-top:14px;font-size:14.5px;color:var(--muted)">Interactive playground: <a href="http://127.0.0.1:8000/docs" target="_blank" rel="noopener">127.0.0.1:8000/docs</a> —
   every row above is clickable and runnable. Auth behaviours were verified against a live server; the bill routes are
-  covered by <code>uv run pytest</code> (52 tests): 401, 415, 413, a flagged wrong total, a 422 on confirm, and the
-  saved row read back from SQLite.</p>
+  covered by <code>uv run pytest</code> (79 tests): 401, 415, 413, a flagged wrong total, a 422 on confirm, the
+  saved row read back from SQLite, a balance that only its owner spends (a 422 spends nothing), and a tip written
+  once per month that still works when the model is busy or the key is missing.</p>
 </section>
 
 <!-- ==================== STATE ==================== -->
@@ -463,6 +474,8 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
         <tr><td>Gemini key + model id</td><td><code>config.py</code> ← <code>.env</code></td><td>swapping the model is one line in <code>.env</code>; no model id in code</td></tr>
         <tr><td>The bill shape</td><td><code>schemas/bill.py</code></td><td>the same schema Gemini fills, the checks judge, and confirm accepts</td></tr>
         <tr><td>Extraction result</td><td>nobody, until confirm</td><td>a draft lives only in the HTTP response — the database cannot hold an unreviewed bill</td></tr>
+        <tr><td>The monthly tip</td><td><code>monthly_insights</code></td><td>unique on (user_id, month): one AI call per month even if the screen opens every day; the facts around it are recomputed each request, so only the sentence is frozen</td></tr>
+        <tr><td>Money left (balance)</td><td><code>users.balance_minor</code></td><td>set only by <code>PUT /account/balance</code>, spent by one atomic decrement next to the confirm insert; never derived, because the opening money is not the app's to know · NULL = “not set yet”</td></tr>
         <tr><td>Money</td><td>one shape, one conversion</td><td>the API speaks rupees as two-place decimals (<code>"128.00"</code>); SQLite keeps exact integer paise in <code>total_minor</code>; only <code>/bills/confirm</code> converts, so floats never enter</td></tr>
         <tr><td>Category + icon vocabulary</td><td><code>config.py</code></td><td>one <code>EXPENSE_CATEGORIES</code> map feeds the prompt, both schema enums and Flutter; a default icon per category means an icon is never invented</td></tr>
         <tr><td>Uploaded photo</td><td>nobody</td><td>read into memory, sent once, dropped — bills are personal data</td></tr>
@@ -484,6 +497,10 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
         <span><code>POST /bills/extract</code> → <code>services/extraction.py</code> → one Gemini call with <code>response_schema=BillDraft</code>. No plain-text describe step; we went straight to the constrained shape.</span></div></li>
       <li class="done"><span class="dot"></span><div class="body"><b>Phase 5 · Check before you save <span class="tag-done">— DONE</span></b>
         <span><code>check_bill()</code> reruns on the edited draft in <code>POST /bills/confirm</code>: maths (line amounts + printed round-off, ±0.02 with a round-off / ₹1.00 cashier rounding without one), ISO date, currency, bounds. Wrong total → 422, never a silent save.</span></div></li>
+      <li class="done"><span class="dot"></span><div class="body"><b>Balance <span class="tag-done">— DONE</span></b>
+        <span><code>users.balance_minor</code> with <code>PUT /account/balance</code> + <code>GET /account</code>; every confirmed bill decrements it in the same transaction, and an unset balance stays unset.</span></div></li>
+      <li class="done"><span class="dot"></span><div class="body"><b>Smart Tips <span class="tag-done">— DONE</span></b>
+        <span><code>GET /insights?month=YYYY-MM</code>: one Gemini tip per user per month (cached in <code>monthly_insights</code>), facts computed live from that month's bills, and a local tip whenever the model is busy — so the screen never fails.</span></div></li>
       <li class="now"><span class="dot"></span><div class="body"><b>Phase 6 · List, demo, ship <span class="tag-now">— NEXT</span></b>
         <span><code>GET /expenses</code> + monthly total, <code>app/static/index.html</code> (upload, fix form, list, Demo button), then 10 real bills through the live link → the N/10 score.</span></div></li>
     </ul>
@@ -515,7 +532,7 @@ out:  $2b$12$Kix6hbh1N9Yc3f0u2Vq0Xe…</code></pre>
 </main>
 
 <footer>
-  Freebuff Desktop · Bill Reader API — Phases 1–5 built · Phase 6 (list, demo, ship) next ·
+  Freebuff Desktop · Bill Reader API — Phases 1–5 + balance &amp; Smart Tips built · Phase 6 (list, demo, ship) next ·
   source docs: <code>README.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>docs/AUTH.md</code>
 </footer>
 
