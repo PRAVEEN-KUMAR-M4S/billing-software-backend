@@ -18,7 +18,8 @@ uv run pytest            # 79 tests: checks, routes, balance, smart tips, the AI
 ```
 
 - Interactive API docs: http://127.0.0.1:8000/docs
-- Local database: `test.db` (SQLite file, auto-created on start, git-ignored)
+- Database: Neon Postgres, from `DATABASE_URL` in `.env` (a SQLite file is the
+  fallback when it is unset)
 
 ## Folder structure (and why)
 

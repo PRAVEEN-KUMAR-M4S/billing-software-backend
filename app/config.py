@@ -2,6 +2,7 @@
 
 import os
 from decimal import Decimal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from dotenv import load_dotenv
 
@@ -16,9 +17,56 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 # --- Database --------------------------------------------------------------
-# One URL, one place. SQLite by default; point this at Postgres (add asyncpg)
-# without touching a line of code.
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+# libpq-only query options: asyncpg.connect() raises TypeError on unknown keys.
+_LIBPQ_ONLY = {"channel_binding", "target_session_attrs", "gssencmode", "options"}
+# PgBouncer in transaction mode reuses backend sessions, which breaks asyncpg's
+# prepared statements, so this cache is disabled on a pooled host. SQLAlchemy
+# casts THIS option to an int and removes it from the URL; a bare
+# statement_cache_size would reach asyncpg as the string "0" and fail inside
+# connect(), so it is deliberately not set.
+_POOLER_CACHE_OPTION = "prepared_statement_cache_size"
+
+
+def _normalise_database_url(url: str) -> str:
+    """Return a URL SQLAlchemy + asyncpg accept, whatever the provider pasted.
+
+    Neon hands out a libpq string: ``postgresql://…?sslmode=require&channel_binding=require``.
+    Passed through unchanged it fails three ways, so all three are fixed here:
+
+    * no ``+asyncpg`` — SQLAlchemy would look for psycopg2, which is not installed;
+    * ``sslmode`` — asyncpg spells the TLS option ``ssl``;
+    * ``channel_binding`` — a libpq setting asyncpg rejects outright.
+
+    A pooled host (``-pooler``) also gets both statement caches switched off: a
+    statement prepared on one backend session can be handed to another that
+    never saw it. A direct host keeps the cache and its speed.
+    """
+    if url.startswith("sqlite"):
+        return url
+
+    parts = urlsplit(url)
+    if parts.scheme not in {"postgres", "postgresql", "postgresql+asyncpg"}:
+        return url
+
+    query = [
+        ("ssl" if key == "sslmode" else key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key not in _LIBPQ_ONLY
+    ]
+    if "pooler" in (parts.hostname or ""):
+        present = {key for key, _ in query}
+        if _POOLER_CACHE_OPTION not in present:
+            query.append((_POOLER_CACHE_OPTION, "0"))
+
+    return urlunsplit(
+        ("postgresql+asyncpg", parts.netloc, parts.path, urlencode(query), parts.fragment)
+    )
+
+
+# One URL, one place: Neon Postgres from .env, SQLite as the no-setup fallback.
+DATABASE_URL = _normalise_database_url(
+    os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
+)
 
 # --- Bill extraction (Gemini) ---------------------------------------------
 # The SDK reads nothing on its own: we pass the key explicitly so a missing
