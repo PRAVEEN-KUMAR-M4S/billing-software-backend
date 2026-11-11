@@ -1,0 +1,13 @@
+# Production dependencies for FastAPI app with Neon Postgres
+# Generated from pyproject.toml [project] dependencies.
+
+aiosqlite>=0.22.1
+asyncpg>=0.32.0
+bcrypt>=5.0.0
+fastapi>=0.141.1
+google-genai>=2.32.0
+pyjwt>=2.15.1
+python-dotenv>=1.2.3
+python-multipart>=0.0.32
+sqlalchemy[asyncio]>=2.1.1
+uvicorn>=0.54.0
