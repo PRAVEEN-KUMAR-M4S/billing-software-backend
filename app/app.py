@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.routers import account, auth, bills, insights
 from app.services.db import create_db_and_table
@@ -12,8 +13,17 @@ async def lifespan(app: FastAPI):
     await create_db_and_table()
     yield
 
-
 app = FastAPI(title="Bill Reader API", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8080",
+        "https://billing-software-frontend-wip4.onrender.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(auth.router)
 app.include_router(account.router)
 app.include_router(bills.router)
