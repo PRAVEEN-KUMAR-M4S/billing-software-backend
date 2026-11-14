@@ -166,3 +166,61 @@ def test_one_users_balance_and_spending_stay_theirs(client, auth_headers, db_fil
     assert account == {"balance": None, "spent": "0.00", "currency": "INR"}
     assert stored_balance(db_file, "ben@example.com") is None
     assert stored_balance(db_file) == 487_500
+
+
+ME = "/auth/me"
+
+
+def test_me_returns_the_profile_and_the_balance_in_one_call(client, auth_headers):
+    set_balance(client, auth_headers, "5000.00")
+    confirm(client, auth_headers)
+
+    me = client.get(ME, headers=auth_headers).json()
+
+    assert me["email"] == "ana@example.com"
+    assert me["id"] > 0
+    assert me["balance"] == "4875.00"
+    assert me["spent"] == "125.00"
+    assert me["currency"] == "INR"
+    assert me["created_at"]  # the server default filled it in
+
+
+def test_me_carries_exactly_what_account_returns(client, auth_headers):
+    set_balance(client, auth_headers, "250.50")
+    confirm(client, auth_headers, total="100.50")
+
+    me = client.get(ME, headers=auth_headers).json()
+    account = client.get("/account", headers=auth_headers).json()
+
+    # One call can replace the other: the money fields agree to the paise.
+    assert {key: me[key] for key in account} == account
+
+
+def test_me_of_a_new_account_has_no_balance(client, auth_headers):
+    me = client.get(ME, headers=auth_headers).json()
+
+    assert me["balance"] is None
+    assert me["spent"] == "0.00"
+
+
+def test_me_is_per_user(client, auth_headers):
+    other = headers_for(client, "ben@example.com")
+    set_balance(client, auth_headers, "5000.00")
+    confirm(client, auth_headers)
+
+    me = client.get(ME, headers=other).json()
+
+    assert me["email"] == "ben@example.com"
+    assert me["balance"] is None
+    assert me["spent"] == "0.00"
+
+
+def test_me_needs_a_token(client):
+    assert client.get(ME).status_code == 401
+
+
+def test_me_never_leaks_the_password_hash(client, auth_headers):
+    body = client.get(ME, headers=auth_headers).json()
+
+    assert "hashed_password" not in body
+    assert "password" not in body

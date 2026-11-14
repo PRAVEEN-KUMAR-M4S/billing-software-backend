@@ -74,7 +74,7 @@ Each folder answers one question:
 | POST   | `/auth/login`    | `{email, password}`           | `{access_token, refresh_token}`      |
 | POST   | `/auth/refresh`  | `{refresh_token}`             | `{access_token, refresh_token}` (new pair) |
 | POST   | `/auth/logout`   | `{refresh_token}`             | nothing (204) — revokes that session |
-| GET    | `/auth/me`       | — (Bearer token header)       | `{id, email}`                        |
+| GET    | `/auth/me`       | — (Bearer token header)       | `{id, email, created_at, balance, spent, currency}` — profile + money in one call |
 | PUT    | `/account/balance` | `{balance}` (rupees, e.g. `"5000.00"`) | `{balance, spent, currency}` — replaces the balance |
 | GET    | `/account`       | — (Bearer token header)       | `{balance, spent, currency}`; `balance` is null until set |
 | POST   | `/bills/extract` | multipart `file` (JPG/PNG ≤5 MB) | `{draft, problems[]}` — writes nothing |

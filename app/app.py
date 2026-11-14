@@ -18,7 +18,6 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:8080",
-        "https://bill-scanner-3gvkqddh1-praveens-projects-fdb192bc.vercel.app",
         "https://bill-scanner-app-omega.vercel.app"
     ],
     allow_credentials=True,

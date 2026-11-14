@@ -10,7 +10,7 @@ Three endpoints, one protected helper, zero fluff.
 | `POST /auth/login` | checks password, issues token pair | `200 {access_token, refresh_token}` | `401` if email or password wrong |
 | `POST /auth/refresh` | trades refresh token for a new pair | `200 {access_token, refresh_token}` | `401` if token unknown/expired/already used |
 | `POST /auth/logout` | revokes one refresh token | `204` (always, even for unknown tokens) | — |
-| `GET /auth/me` | says who the token belongs to | `200 {id, email}` | `401` if token missing/invalid |
+| `GET /auth/me` | who the token belongs to, plus their money | `200 {id, email, created_at, balance, spent, currency}` | `401` if token missing/invalid |
 
 ## The two tokens (and why there are two)
 

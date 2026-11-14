@@ -58,7 +58,8 @@ or the database without rewriting your logic.
      a. reads "Authorization: Bearer <token>"
      b. jwt.decode → signature + expiry check → user id (or 401)
      c. loads User row (or 401 if deleted)
-2. route body receives the actual User object and just returns it
+2. route body receives the actual User object, reads the account snapshot
+   (sum of that user's bills) and returns profile + balance together
 ```
 
 This is the pattern every future protected route reuses — including

@@ -5,7 +5,11 @@
   with the password hash in it).
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
+
+from app.schemas.account import AccountOut
 
 
 class UserCreate(BaseModel):
@@ -23,6 +27,14 @@ class UserOut(BaseModel):
     email: str
 
     model_config = {"from_attributes": True}
+
+
+class MeOut(AccountOut):
+    """The signed-in user plus their money, so the app needs one call, not two."""
+
+    id: int
+    email: str
+    created_at: datetime | None = None
 
 
 class TokenResponse(BaseModel):

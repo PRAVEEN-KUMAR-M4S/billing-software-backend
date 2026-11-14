@@ -7,7 +7,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import get_current_user
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.schemas.auth import RefreshRequest, TokenResponse, UserCreate, UserLogin, UserOut
+from app.routers.account import account_snapshot
+from app.schemas.auth import (
+    MeOut,
+    RefreshRequest,
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UserOut,
+)
 from app.services.auth import (
     create_access_token,
     create_refresh_token,
@@ -81,6 +89,18 @@ async def logout(data: RefreshRequest, session: AsyncSession = Depends(get_async
         await session.commit()
 
 
-@router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user)):
-    return user
+@router.get("/me", response_model=MeOut)
+async def me(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """Profile *and* money in one call: the app does not need `/account` on start."""
+    account = await account_snapshot(user, session)
+    return MeOut(
+        id=user.id,
+        email=user.email,
+        created_at=user.created_at,
+        balance=account.balance,
+        spent=account.spent,
+        currency=account.currency,
+    )
