@@ -118,3 +118,40 @@ class InsightsOut(BaseModel):
     tip: SmartTip
     facts: QuickFacts
     challenge: Challenge
+
+
+class SpendingFactOut(BaseModel):
+    """One line of the facts block. The server decides the words and the money."""
+
+    kind: Literal["category", "shop", "average"] = Field(
+        description="Which fact this is: the biggest category, the busiest shop, or the average bill."
+    )
+    label: str = Field(description='The heading, e.g. "Biggest expense category".')
+    value: str = Field(
+        description='The number or name, e.g. "Food & drink" or "\u20b91,360.00".'
+    )
+    detail: str = Field(
+        description='The line under it, e.g. "\u20b91,360.00 across 2 bills".'
+    )
+
+
+class WeeklyChallengeOut(BaseModel):
+    """This week's nudge. `done` stays false until ticks are persisted."""
+
+    key: str = Field(description='Stable identifier, e.g. "review-bills".')
+    title: str
+    note: str
+    week_start: date_type = Field(description="Monday of the current week.")
+    done: bool = False
+
+
+class SmartTipsOut(BaseModel):
+    """The whole Smart Tips page: copy and numbers decided on the server."""
+
+    message: str
+    month_label: str = Field(description='Human label, e.g. "November 2026".')
+    summary: str = Field(description='e.g. "2 saved bills \u00b7 INR".')
+    facts: list[SpendingFactOut]
+    challenge: WeeklyChallengeOut
+    suggests_adding_bill: bool
+    currency: Literal["INR"] = "INR"

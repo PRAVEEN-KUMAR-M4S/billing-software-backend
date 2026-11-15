@@ -7,6 +7,7 @@ chance instead of owning the month.
 """
 
 import sqlite3
+from datetime import date, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -321,3 +322,122 @@ def test_money_never_leaks_out_as_paise(client, auth_headers, fake_tip):
     facts = get_insights(client, auth_headers).json()["facts"]
     assert facts["total"] == "127.49"
     assert facts["average_bill"] == "127.49"
+
+
+# --- Smart Tips: the all-time screen ---------------------------------------
+
+
+def smart_tips(client, headers):
+    return client.get("/insights/smart-tips", headers=headers)
+
+
+def monday() -> str:
+    today = date.today()
+    return (today - timedelta(days=today.weekday())).isoformat()
+
+
+def test_smart_tips_require_a_token(client):
+    assert client.get("/insights/smart-tips").status_code == 401
+
+
+def test_an_empty_account_gets_the_first_run_message(client, auth_headers):
+    response = smart_tips(client, auth_headers)
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    body = response.json()
+    assert body["summary"] == "No saved bills yet · INR"
+    assert body["facts"] == []
+    assert body["suggests_adding_bill"] is True
+    assert body["message"] == (
+        "You haven't added a bill this week. Add one to get more useful tips."
+    )
+    assert body["currency"] == "INR"
+    assert len(body["month_label"]) > 4
+    assert body["challenge"]["key"] == "review-bills"
+    assert body["challenge"]["done"] is False
+    assert body["challenge"]["week_start"] == monday()
+
+
+def test_two_bills_one_category_and_shop_give_the_exact_facts(client, auth_headers):
+    save(client, auth_headers, shop="Lulu", day="2026-10-05", total="800.00", category="dining")
+    save(client, auth_headers, shop="Lulu", day="2026-10-06", total="560.00", category="dining")
+
+    body = smart_tips(client, auth_headers).json()
+
+    assert body["summary"] == "2 saved bills · INR"
+    assert [fact["kind"] for fact in body["facts"]] == ["category", "shop", "average"]
+    assert body["facts"][0] == {
+        "kind": "category",
+        "label": "Biggest expense category",
+        "value": "Food & drink",
+        "detail": "₹1,360.00 across 2 bills",
+    }
+    assert body["facts"][1] == {
+        "kind": "shop",
+        "label": "Most visited shop",
+        "value": "Lulu",
+        "detail": "2 bills",
+    }
+    assert body["facts"][2] == {
+        "kind": "average",
+        "label": "Average bill",
+        "value": "₹680.00",
+        "detail": "Across 2 saved bills",
+    }
+
+
+def test_a_bill_on_this_monday_flips_the_message(client, auth_headers):
+    # The boundary is inclusive: a bill dated exactly Monday counts as this week.
+    save(client, auth_headers, shop="Lulu", day=monday(), total="1360.00", category="dining")
+
+    body = smart_tips(client, auth_headers).json()
+
+    assert body["suggests_adding_bill"] is False
+    assert body["message"] == (
+        "Food & drink takes most of your money. A small change there adds up."
+    )
+    assert body["summary"] == "1 saved bill · INR"
+
+
+def test_a_bill_from_last_week_still_asks_for_one(client, auth_headers):
+    today = date.today()
+    last_sunday = today - timedelta(days=today.weekday()) - timedelta(days=1)
+    save(client, auth_headers, day=last_sunday.isoformat(), total="100.00", category="dining")
+
+    body = smart_tips(client, auth_headers).json()
+
+    assert body["suggests_adding_bill"] is True
+    assert body["facts"][0]["value"] == "Food & drink"
+
+
+def test_ties_break_deterministically_by_name(client, auth_headers):
+    save(client, auth_headers, shop="Zeta", day="2026-10-05", total="100.00", category="groceries")
+    save(client, auth_headers, shop="Alpha", day="2026-10-06", total="100.00", category="dining")
+
+    body = smart_tips(client, auth_headers).json()
+
+    # Equal category totals: the earlier slug wins.
+    assert body["facts"][0]["value"] == "Food & drink"
+    # Equal visit counts: the earlier shop name wins.
+    assert body["facts"][1]["value"] == "Alpha"
+
+
+def test_smart_tips_only_see_my_bills(client, auth_headers):
+    client.post("/auth/register", json={"email": "ben@example.com", "password": "secret123"})
+    tokens = client.post(
+        "/auth/login", json={"email": "ben@example.com", "password": "secret123"}
+    ).json()
+    other = {"Authorization": f"Bearer {tokens['access_token']}"}
+    save(client, auth_headers, total="500.00")
+
+    body = smart_tips(client, other).json()
+
+    assert body["summary"] == "No saved bills yet · INR"
+    assert body["facts"] == []
+
+
+def test_smart_tips_never_leak_the_password_hash(client, auth_headers):
+    save(client, auth_headers)
+
+    assert "hashed_password" not in smart_tips(client, auth_headers).text

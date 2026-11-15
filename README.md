@@ -80,6 +80,7 @@ Each folder answers one question:
 | POST   | `/bills/extract` | multipart `file` (JPG/PNG ≤5 MB) | `{draft, problems[]}` — writes nothing |
 | POST   | `/bills/confirm` | `{draft}` (the user's edited draft) | the saved bill (201), or 422 + `problems[]` |
 | GET    | `/insights?month=YYYY-MM` | — (Bearer token; month defaults to now) | `{month, month_label, tip, facts, challenge}` — one AI call per user per month |
+| GET    | `/insights/smart-tips` | — (Bearer token) | `{message, month_label, summary, facts[], challenge, suggests_adding_bill, currency}` — all-time, read-only, `Cache-Control: no-store` |
 
 Try it:
 

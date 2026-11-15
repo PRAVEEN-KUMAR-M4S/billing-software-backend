@@ -12,7 +12,7 @@ local tip, sourced from the same numbers. Only a genuine storage failure could
 
 from datetime import date as date_type, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -22,7 +22,13 @@ from app.config import INSIGHTS_PROMPT_VERSION, INSIGHTS_RETRY_HOURS
 from app.deps import get_current_user
 from app.models.insight import MonthlyInsight
 from app.models.user import User
-from app.schemas.insight import Challenge, InsightsOut, QuickFacts, SmartTip
+from app.schemas.insight import (
+    Challenge,
+    InsightsOut,
+    QuickFacts,
+    SmartTip,
+    SmartTipsOut,
+)
 from app.services import insights as service
 from app.services.auth import utcnow
 from app.services.db import get_async_session
@@ -149,3 +155,15 @@ async def get_insights(
         facts=facts,
         challenge=challenge,
     )
+
+
+@router.get("/smart-tips", response_model=SmartTipsOut)
+async def get_smart_tips(
+    response: Response,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_async_session),
+):
+    """The Smart Tips page: server-decided copy and numbers in one read-only call."""
+    # Per-user money: nothing along the way may cache this.
+    response.headers["Cache-Control"] = "no-store"
+    return await service.smart_tips_for(session, user.id, date_type.today())

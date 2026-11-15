@@ -22,7 +22,7 @@ from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from google.genai import types
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import (
@@ -33,7 +33,17 @@ from app.config import (
 )
 from app.models.expense import Expense
 from app.schemas.bill import format_money
-from app.schemas.insight import CategoryFact, Challenge, QuickFacts, ShopFact, SmartTip, TipDraft
+from app.schemas.insight import (
+    CategoryFact,
+    Challenge,
+    QuickFacts,
+    ShopFact,
+    SmartTip,
+    SmartTipsOut,
+    SpendingFactOut,
+    TipDraft,
+    WeeklyChallengeOut,
+)
 from app.services.gemini import GeminiError, candidate_models, get_client, upstream_code
 
 _PAISE = Decimal("0.01")
@@ -252,4 +262,139 @@ def generate_tip(facts: QuickFacts, month_label_text: str) -> TipDraft:
         "Gemini is overloaded right now (503 UNAVAILABLE — high demand) on "
         f"{', '.join(overloaded)}.",
         status_code=503,
+    )
+
+
+# --- Smart Tips: the all-time screen ---------------------------------------
+
+
+def _inr(minor: int) -> str:
+    """Paise -> "₹1,360.00". Grouped and two-place here, so no client re-formats."""
+    return f"₹{Decimal(minor) / 100:,.2f}"
+
+
+def _bill_word(count: int) -> str:
+    return "bill" if count == 1 else "bills"
+
+
+async def smart_tips_for(
+    session: AsyncSession, user_id: int, today: date_type
+) -> SmartTipsOut:
+    """One screen, four grouped reads, no row-by-row loading.
+
+    Every number comes from SQL over this user's bills only: a count+sum for the
+    summary, a grouped sum for the biggest category, a grouped count for the most
+    visited shop, and a count dated on/after this Monday for the nudge.
+    """
+    week_start = today - timedelta(days=today.weekday())
+
+    bills, total_minor = (
+        await session.execute(
+            select(
+                func.count(Expense.id),
+                func.coalesce(func.sum(Expense.total_minor), 0),
+            ).where(Expense.user_id == user_id)
+        )
+    ).one()
+
+    # Biggest category: biggest total first, ties to the earlier slug.
+    biggest = (
+        await session.execute(
+            select(
+                Expense.category,
+                func.sum(Expense.total_minor).label("amount"),
+                func.count(Expense.id).label("bills"),
+            )
+            .where(Expense.user_id == user_id)
+            .group_by(Expense.category)
+            .order_by(func.sum(Expense.total_minor).desc(), Expense.category.asc())
+            .limit(1)
+        )
+    ).first()
+
+    # Most visited shop: most bills first, ties to the earlier name. Blank names
+    # are skipped — they are not information on the screen.
+    shop = (
+        await session.execute(
+            select(Expense.shop, func.count(Expense.id).label("bills"))
+            .where(Expense.user_id == user_id, Expense.shop != "")
+            .group_by(Expense.shop)
+            .order_by(func.count(Expense.id).desc(), Expense.shop.asc())
+            .limit(1)
+        )
+    ).first()
+
+    this_week = await session.scalar(
+        select(func.count(Expense.id)).where(
+            Expense.user_id == user_id, Expense.date >= week_start
+        )
+    )
+
+    facts: list[SpendingFactOut] = []
+    category_label: str | None = None
+    if biggest is not None:
+        # Old rows predate the category field; those are the "other" bucket.
+        slug = (
+            biggest.category if biggest.category in EXPENSE_CATEGORY_LABELS else "other"
+        )
+        category_label = EXPENSE_CATEGORY_LABELS[slug]
+        count = int(biggest.bills)
+        facts.append(
+            SpendingFactOut(
+                kind="category",
+                label="Biggest expense category",
+                value=category_label,
+                detail=f"{_inr(int(biggest.amount))} across {count} {_bill_word(count)}",
+            )
+        )
+    if shop is not None:
+        count = int(shop.bills)
+        facts.append(
+            SpendingFactOut(
+                kind="shop",
+                label="Most visited shop",
+                value=shop.shop,
+                detail=f"{count} {_bill_word(count)}",
+            )
+        )
+    if bills:
+        average = (Decimal(int(total_minor)) / 100 / bills).quantize(
+            _PAISE, rounding=ROUND_HALF_UP
+        )
+        facts.append(
+            SpendingFactOut(
+                kind="average",
+                label="Average bill",
+                value=f"₹{average:,.2f}",
+                detail=f"Across {bills} saved {_bill_word(bills)}",
+            )
+        )
+
+    suggests = bills == 0 or not this_week
+    if suggests:
+        message = "You haven't added a bill this week. Add one to get more useful tips."
+    else:
+        message = f"{category_label} takes most of your money. A small change there adds up."
+
+    return SmartTipsOut(
+        message=message,
+        month_label=month_label(current_month()),
+        summary=(
+            "No saved bills yet · INR"
+            if bills == 0
+            else f"{bills} saved {_bill_word(bills)} · {DEFAULT_CURRENCY}"
+        ),
+        facts=facts,
+        challenge=WeeklyChallengeOut(
+            key="review-bills",
+            title="Review one saved bill",
+            note=(
+                "Open a bill and check the numbers against the paper, so a misread "
+                "is caught before it adds up."
+            ),
+            week_start=week_start,
+            done=False,
+        ),
+        suggests_adding_bill=suggests,
+        currency=DEFAULT_CURRENCY,
     )
