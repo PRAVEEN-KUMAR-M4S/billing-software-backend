@@ -9,7 +9,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.schemas.account import AccountOut
+from app.config import DEFAULT_CURRENCY
+from app.schemas.bill import Money
 
 
 class UserCreate(BaseModel):
@@ -29,12 +30,22 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class MeOut(AccountOut):
-    """The signed-in user plus their money, so the app needs one call, not two."""
+class MeOut(BaseModel):
+    """The signed-in user plus the balance stored on their own row.
+
+    The balance is read straight from `users.balance_minor`: no expenses are
+    summed or subtracted here. `/account` still returns the derived `spent`
+    total for screens that show it.
+    """
 
     id: int
     email: str
     created_at: datetime | None = None
+    balance: Money | None = Field(
+        default=None,
+        description="Money available now, from the user's row; null until set.",
+    )
+    currency: str = Field(default=DEFAULT_CURRENCY, description="ISO 4217 code.")
 
 
 class TokenResponse(BaseModel):

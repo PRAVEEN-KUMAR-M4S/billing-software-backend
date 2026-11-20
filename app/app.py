@@ -14,6 +14,12 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="Bill Reader API", lifespan=lifespan)
+
+
+@app.get("/health", tags=["health"])
+def health() -> dict[str, str]:
+    """Liveness only: no token, no database, so a keep-alive ping stays cheap."""
+    return {"status": "ok"}
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

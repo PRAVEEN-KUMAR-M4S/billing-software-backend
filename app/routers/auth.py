@@ -1,13 +1,15 @@
 """Auth endpoints: register, login, refresh, logout, and /me."""
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import DEFAULT_CURRENCY
 from app.deps import get_current_user
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
-from app.routers.account import account_snapshot
 from app.schemas.auth import (
     MeOut,
     RefreshRequest,
@@ -94,13 +96,14 @@ async def me(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_async_session),
 ):
-    """Profile *and* money in one call: the app does not need `/account` on start."""
-    account = await account_snapshot(user, session)
+    """Profile plus the balance exactly as stored: one row read, no expense arithmetic."""
+    balance_minor = await session.scalar(
+        select(User.balance_minor).where(User.id == user.id)
+    )
     return MeOut(
         id=user.id,
         email=user.email,
         created_at=user.created_at,
-        balance=account.balance,
-        spent=account.spent,
-        currency=account.currency,
+        balance=None if balance_minor is None else Decimal(balance_minor) / 100,
+        currency=DEFAULT_CURRENCY,
     )

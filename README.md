@@ -74,7 +74,7 @@ Each folder answers one question:
 | POST   | `/auth/login`    | `{email, password}`           | `{access_token, refresh_token}`      |
 | POST   | `/auth/refresh`  | `{refresh_token}`             | `{access_token, refresh_token}` (new pair) |
 | POST   | `/auth/logout`   | `{refresh_token}`             | nothing (204) — revokes that session |
-| GET    | `/auth/me`       | — (Bearer token header)       | `{id, email, created_at, balance, spent, currency}` — profile + money in one call |
+| GET    | `/auth/me`       | — (Bearer token header)       | `{id, email, created_at, balance, currency}` — profile + the stored balance (no expense maths) |
 | PUT    | `/account/balance` | `{balance}` (rupees, e.g. `"5000.00"`) | `{balance, spent, currency}` — replaces the balance |
 | GET    | `/account`       | — (Bearer token header)       | `{balance, spent, currency}`; `balance` is null until set |
 | POST   | `/bills/extract` | multipart `file` (JPG/PNG ≤5 MB) | `{draft, problems[]}` — writes nothing |
@@ -268,6 +268,43 @@ curl -X POST http://127.0.0.1:8000/bills/confirm \
   -H "Authorization: Bearer <access token>" -H 'Content-Type: application/json' \
   -d '{"draft":{"shop":"Lulu","date":"2026-10-22","currency":"INR","category":"groceries","icon":"strokeRoundedShoppingBasket01","total":"125.00","round_off":null,"items":[{"name":"Rice 1kg","qty":2,"amount":"80.00"},{"name":"Milk","qty":1,"amount":"45.00"}]}}'
 ```
+
+## Deploying on Render (and keeping it awake)
+
+Render's free web service sleeps after ~15 minutes without traffic, so the next real visitor pays a
+30–60 second wake-up. The fix is a free uptime monitor pinging a tiny endpoint on a schedule.
+
+**The Render service**
+
+| Setting | Value |
+| ------- | ----- |
+| Build command | `pip install -r requirements.txt` |
+| Start command | `uvicorn app.app:app --host 0.0.0.0 --port $PORT` |
+| Health check path | `/health` |
+
+Set the environment variables from `.env.example` in the Render dashboard (`DATABASE_URL` with the real
+Neon password, `SECRET_KEY`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS`). Never commit `.env`.
+
+`GET /health` exists for exactly this: plain `{"status": "ok"}`, no token and no database query, so a ping
+does not wake Neon or burn a Gemini call. (`/docs` would work too, but it is a bigger response.)
+
+**The UptimeRobot monitor (free plan)**
+
+1. Create a free account at [uptimerobot.com](https://uptimerobot.com) → **Add New Monitor**.
+2. Monitor type **HTTP(s)**, friendly name anything (e.g. `bill-reader-api`).
+3. URL: `https://<your-service>.onrender.com/health` (use the deployed URL, not localhost).
+4. Monitoring interval **5 minutes** — the free plan's minimum, and short enough to stay under Render's
+   15-minute sleep timer.
+5. Leave the expected status at 200; add your email under **Alert Contacts** so you also hear about real
+   downtime.
+6. Save, then hit **Test Notification** once so you know alerts reach you.
+
+Verify it works: open the monitor's response time graph and check it is green for ~20 minutes; the first
+request to the app after a long quiet period should then already be warm.
+
+Two limits worth knowing: Render's free tier gives 750 instance-hours a month (one always-awake service fits),
+and Neon's free database autosuspends on its own schedule — the ping keeps the *web* process up, and the first
+query after a long idle can still take an extra moment.
 
 ## Roadmap
 

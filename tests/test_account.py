@@ -180,27 +180,30 @@ def test_me_returns_the_profile_and_the_balance_in_one_call(client, auth_headers
     assert me["email"] == "ana@example.com"
     assert me["id"] > 0
     assert me["balance"] == "4875.00"
-    assert me["spent"] == "125.00"
     assert me["currency"] == "INR"
     assert me["created_at"]  # the server default filled it in
+    assert "spent" not in me  # no expense total is computed on this route
 
 
-def test_me_carries_exactly_what_account_returns(client, auth_headers):
+def test_me_returns_the_stored_balance_without_subtracting_the_expenses_again(
+    client, auth_headers, db_file
+):
     set_balance(client, auth_headers, "250.50")
     confirm(client, auth_headers, total="100.50")
 
     me = client.get(ME, headers=auth_headers).json()
     account = client.get("/account", headers=auth_headers).json()
 
-    # One call can replace the other: the money fields agree to the paise.
-    assert {key: me[key] for key in account} == account
+    # The row already holds 150.00 after the bill; /me reports that, unchanged.
+    assert stored_balance(db_file) == 15_000
+    assert me["balance"] == "150.00"
+    assert me["balance"] == account["balance"]
 
 
 def test_me_of_a_new_account_has_no_balance(client, auth_headers):
     me = client.get(ME, headers=auth_headers).json()
 
     assert me["balance"] is None
-    assert me["spent"] == "0.00"
 
 
 def test_me_is_per_user(client, auth_headers):
@@ -212,7 +215,6 @@ def test_me_is_per_user(client, auth_headers):
 
     assert me["email"] == "ben@example.com"
     assert me["balance"] is None
-    assert me["spent"] == "0.00"
 
 
 def test_me_needs_a_token(client):
